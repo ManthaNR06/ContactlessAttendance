@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Live QR - {{ subject }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-dark text-white text-center">
+
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">Smart Attendance Portal</a>
+            <div class="d-flex">
+                <a href="/" class="btn btn-outline-light btn-sm me-2">Home</a>
+                <a href="/login" class="btn btn-outline-danger btn-sm">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-5">
+        <h1 class="fw-bold">{{ subject }}</h1>
+        <p class="text-secondary">Scanning allowed only in classroom range</p>
+        
+        <div class="bg-white d-inline-block p-4 rounded-4 shadow-lg mt-3">
+            <img id="qrImage" src="" alt="QR Code" style="width: 350px;">
+        </div>
+
+        <div class="mt-4">
+            <p id="timer" class="badge bg-primary fs-5">Refreshing in: 10s</p>
+        </div>
+        
+        <a href="/teacher" class="btn btn-outline-light mt-3">Stop & Change Subject</a>
+    </div>
+
+    <script>
+        let timeLeft = 90;
+        const subject = "{{ subject }}";
+
+        function refreshQR() {
+            fetch('/generate_qr_api?subject=' + encodeURIComponent(subject))
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('qrImage').src = "data:image/png;base64," + data.qr_code;
+                timeLeft = 90; // Reset timer
+            });
+        }
+
+        setInterval(() => {
+            timeLeft--;
+            document.getElementById('timer').innerText = "Refreshing in: " + timeLeft + "s";
+            if (timeLeft <= 0) refreshQR();
+        }, 1000);
+
+        window.onload = refreshQR; // Load first QR immediately
+    </script>
+</body>
+</html>

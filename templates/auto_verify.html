@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contactless Face & GPS Verification</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f4f7f6; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+        .verify-card { background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; position: relative; }
+        .video-container { position: relative; width: 100%; border-radius: 15px; overflow: hidden; background: #000; }
+        #video { width: 100%; display: block; transform: scaleX(-1); }
+        .face-overlay {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 220px; height: 280px; border: 3px dashed rgba(255, 255, 255, 0.6);
+            border-radius: 50%; pointer-events: none; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.4);
+        }
+        .status-badge { font-size: 0.9rem; padding: 8px 15px; border-radius: 50px; display: inline-block; margin-top: 1.5rem; transition: all 0.3s ease; }
+        #canvas { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="verify-card">
+    <h3 class="fw-bold mb-3">Identity Check</h3>
+    <p class="text-muted small mb-4">Align your face within the circle for automatic verification.</p>
+
+    <div class="video-container">
+        <video id="video" autoplay playsinline></video>
+        <div class="face-overlay" id="overlay"></div>
+    </div>
+    
+    <canvas id="canvas" width="640" height="480"></canvas>
+
+    <div id="location-status" class="status-badge bg-warning text-dark">Initializing Sensors...</div>
+    <div id="response-msg" class="mt-3 fw-bold"></div>
+</div>
+
+<script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const locationStatus = document.getElementById('location-status');
+    const msgDiv = document.getElementById('response-msg');
+    const overlay = document.getElementById('overlay');
+    
+    let userCoords = null;
+    let isProcessing = false; 
+
+    // 1. Initialize Camera
+    async function startCamera() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+            video.srcObject = stream;
+            checkReadyStatus(); 
+        } catch (err) {
+            msgDiv.innerText = "Camera access denied.";
+            msgDiv.className = "mt-3 fw-bold text-danger";
+        }
+    }
+
+    // 2. High-Accuracy GPS Logic
+    function getGPS() {
+        if (navigator.geolocation) {
+            const geoOptions = {
+                enableHighAccuracy: true, // Forces phone to use GPS hardware
+                timeout: 10000,           // Wait up to 10 seconds for a satellite lock
+                maximumAge: 0             // Always get fresh coordinates, no cache
+            };
+
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    userCoords = { lat: position.coords.latitude, lon: position.coords.longitude };
+                    const accuracy = Math.round(position.coords.accuracy);
+                    locationStatus.innerText = `Location Locked (±${accuracy}m)`;
+                    locationStatus.className = "status-badge bg-success text-white";
+                    checkReadyStatus();
+                },
+                (error) => {
+                    console.error("GPS Error:", error);
+                    locationStatus.innerText = "GPS Error: Enable High Accuracy";
+                    locationStatus.className = "status-badge bg-danger text-white";
+                },
+                geoOptions
+            );
+        } else {
+            locationStatus.innerText = "Geolocation not supported";
+            locationStatus.className = "status-badge bg-danger text-white";
+        }
+    }
+
+    // 3. Automated Trigger Logic
+    function checkReadyStatus() {
+        if (isProcessing) return;
+
+        if (userCoords && video.srcObject && video.readyState >= 2) {
+            locationStatus.innerText = "Position Verified. Stay Still...";
+            locationStatus.className = "status-badge bg-primary text-white";
+            overlay.style.borderColor = "#0d6efd"; 
+            
+            // Auto-capture after 3 seconds of alignment
+            setTimeout(captureAndVerify, 3000);
+        } else {
+            setTimeout(checkReadyStatus, 500);
+        }
+    }
+
+    // 4. Identification & Submission
+    function captureAndVerify() {
+        if (isProcessing) return;
+
+        let prn = "{{ session.get('student_id', '') }}" || localStorage.getItem('saved_prn');
+
+        if (!prn) {
+            msgDiv.innerText = "Please Login on this device first!";
+            msgDiv.className = "mt-3 fw-bold text-danger";
+            return;
+        }
+
+        isProcessing = true;
+        overlay.style.borderColor = "#198754"; 
+
+        const context = canvas.getContext('2d');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        context.translate(canvas.width, 0);
+        context.scale(-1, 1);
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        const imageData = canvas.toDataURL('image/jpeg', 0.9);
+
+        msgDiv.innerText = "Recognizing Face...";
+        msgDiv.className = "mt-3 fw-bold text-primary";
+
+        fetch('/verify_attendance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                token: "{{ token }}",
+                prn: prn,
+                latitude: userCoords.lat,
+                longitude: userCoords.lon,
+                image: imageData,            
+                device_fingerprint: localStorage.getItem('unique_device_id')
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                document.querySelector('.video-container').style.display = 'none';
+                document.getElementById('location-status').style.display = 'none';
+                
+                msgDiv.innerHTML = `
+                    <div class="alert alert-success p-4 rounded-4 shadow-sm">
+                        <h2 class="display-6">✅ Done!</h2>
+                        <h4 class="mt-2">Attendance Marked</h4>
+                        <p class="text-muted">Your identity and location have been verified.</p>
+                        <hr>
+                        <div class="d-grid gap-2">
+                            <a href="/stats" class="btn btn-success btn-lg shadow-sm">View History & %</a>
+                            <a href="/" class="btn btn-outline-secondary">Return to Home</a>
+                        </div>
+                    </div>
+                `;
+                msgDiv.className = "mt-3";
+            } else {
+                msgDiv.innerText = "❌ " + data.message;
+                msgDiv.className = "mt-3 fw-bold text-danger";
+                setTimeout(() => { 
+                    isProcessing = false; 
+                    overlay.style.borderColor = "rgba(255, 255, 255, 0.6)";
+                    checkReadyStatus(); 
+                }, 4000);
+            }
+        });
+    }
+
+    window.onload = () => {
+        startCamera();
+        getGPS();
+    };
+</script>
+</body>
+</html>

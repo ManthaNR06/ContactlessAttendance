@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<div class="container mt-5">
+    <h2 class="mb-4">User Authority Management</h2>
+    <table class="table table-hover bg-white shadow-sm rounded">
+        <thead class="table-dark">
+            <tr>
+                <th>PRN</th>
+                <th>Name</th>
+                <th>Current Role</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+            <tr>
+                <td>{{ user[0] }}</td>
+                <td>{{ user[1] }}</td>
+                <td><span class="badge bg-info">{{ user[2] }}</span></td>
+                <td>
+                    <select class="form-select form-select-sm d-inline-block w-auto" 
+                            onchange="changeRole('{{ user[0] }}', this.value)">
+                        <option value="">Change to...</option>
+                        <option value="Student">Student</option>
+                        <option value="Teacher">Teacher</option>
+                        <option value="Admin">Admin</option>
+                    </select>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<script>
+function changeRole(prn, newRole) {
+    if(!newRole) return;
+    fetch('/admin/update_role', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ prn: prn, role: newRole })
+    }).then(res => res.json()).then(data => {
+        alert(data.message);
+        location.reload(); // Refresh to show updated badges
+    });
+}
+</script>
+</html>

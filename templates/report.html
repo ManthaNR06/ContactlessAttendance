@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Attendance Report</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+  <div class="container">
+    <a class="navbar-brand" href="#">Smart Attendance</a>
+    <div class="navbar-nav">
+      <a class="nav-link" href="/teacher">Teacher Portal</a>
+      <a class="nav-link" href="/login">Student Login</a>
+      <a class="nav-link" href="/report">View Reports</a>
+    </div>
+  </div>
+</nav>
+
+    <nav class="navbar navbar-dark bg-primary mb-4">
+        <div class="container">
+            <span class="navbar-brand mb-0 h1">Class Attendance Report</span>
+            <div class="d-flex align-items-center">
+                <a href="/" class="btn btn-outline-light btn-sm">Back to QR Code</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="card shadow">
+            <div class="card-body">
+                <table class="table table-hover">
+                    <thead class="table-dark">
+                      <tr>
+                        <th>Student Name</th>
+                        <th>Date</th> <th>Time</th>
+                        <th>Status</th>
+                        <th>Coordinates</th>
+                        </tr>
+                        </thead>
+
+                    <tbody id="attendance-table-body">
+                        {% for log in logs %}
+                        <tr>
+                            <td><strong>{{ log.name }}</strong></td>
+                            <td>{{ log.date }}</td> <td>{{ log.time }}</td>
+                            <td>
+                            <span class="badge {% if log.status == 'Present' %}bg-success{% else %}bg-danger{% endif %}">
+                                {{ log.status }}
+                            </span>
+                        </td>
+                        <td class="text-muted small">{{ log.lat }}, {{ log.lon }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function fetchLiveUpdates() {
+            // Using the API route we created in app.py
+            fetch('/api/attendance_data')
+                .then(response => response.json())
+                .then(data => {
+                    const tableBody = document.getElementById('attendance-table-body');
+                     
+                    // Clear and rebuild table body
+                    tableBody.innerHTML = ''; 
+
+                    data.forEach(log => {
+                        const badgeClass = log.status === 'Present' ? 'bg-success' : 'bg-danger';
+                        const row = `
+                            <tr>
+                                <td><strong>${log.name}</strong></td>
+                                <td>${log.date}</td> <td>${log.time}</td>
+                                <td><span class="badge ${badgeClass}">${log.status}</span></td>
+                                <td class="text-muted small">${log.lat}, ${log.lon}</td>
+                            </tr>
+                        `;
+                        tableBody.innerHTML += row;
+                    });
+                })
+                .catch(err => {
+                    console.error('Fetch error:', err);
+                    document.getElementById('sync-indicator').innerText = "Sync Error";
+                });
+        }
+
+        // Poll the server every 3 seconds for new attendance marks
+        setInterval(fetchLiveUpdates, 3000);
+    </script>
+</body>
+</html>
