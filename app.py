@@ -8,6 +8,7 @@ import uuid
 import math
 import pyodbc
 import qrcode
+from functools import wraps # Added for the decorator
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 
 # --- CONFIGURATION ---
@@ -41,6 +42,20 @@ app.secret_key = "supersecretkey123"
 
 recent_tokens = [] 
 
+# --- SECURITY DECORATOR ---
+# This defines the "login_required" logic used in your routes
+def login_required(role="any"):
+    def wrapper(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if 'user_role' not in session:
+                return redirect(url_for('login'))
+            if role != "any" and session.get('user_role') != role:
+                return "Access Denied: Unauthorized Role", 403
+            return f(*args, **kwargs)
+        return decorated_function
+    return wrapper
+
 def get_db_connection():
     return pyodbc.connect(
         r'DRIVER={SQL Server};'
@@ -62,6 +77,7 @@ def index():
     return render_template('index.html')
 
 @app.route('/teacher', methods=['GET', 'POST'])
+@login_required(role="Teacher")
 def teacher_page():
     if request.method == 'POST':
         subject = request.form.get('subject')
@@ -69,6 +85,7 @@ def teacher_page():
     return render_template('teacher_selection.html')
 
 @app.route('/teacher/qr/<subject>')
+@login_required(role="Teacher")
 def qr_display(subject):
     return render_template('teacher_qr.html', subject=subject)
 
@@ -81,7 +98,6 @@ def generate_qr_api():
     if len(recent_tokens) > 5:
         recent_tokens.pop(0)
     
-    # Use the PUBLIC_URL so QR works on mobile internet
     full_url = f"{PUBLIC_URL}/auto_verify/{new_token}"
     
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
@@ -120,11 +136,11 @@ def register_face():
 
         conn = get_db_connection()
         cursor = conn.cursor()
-        # Filling all 6 columns to prevent NULLs
+        # Added 'Student' as the default role for new registrations
         cursor.execute("""
-            INSERT INTO Students (StudentID, Password, StudentName, DeviceID, RollNo, PRN) 
-            VALUES (?, ?, ?, ?, ?, ?)""", 
-            (prn, password, fullname, fingerprint, rollno, prn))
+            INSERT INTO Students (StudentID, Password, StudentName, DeviceID, RollNo, PRN, Role) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)""", 
+            (prn, password, fullname, fingerprint, rollno, prn, 'Student'))
         conn.commit()
         conn.close()
         return jsonify({"status": "success", "message": "Account created!"})
@@ -176,7 +192,6 @@ def verify_attendance():
             
         student_master_encoding = get_face_encoding_direct(face_path)
         
-        # SAFETY CHECK: Prevent NoneType subtraction error
         if student_master_encoding is None:
             conn.close()
             return jsonify({"status": "fail", "message": "Face Engine Error: Could not read master photo."})
@@ -201,7 +216,7 @@ def verify_attendance():
         conn.close()
         return jsonify({"status": "error", "message": f"Face Engine Error: {str(e)}"})
 
-    class_lat, class_lon = 19.18217151056681, 72.84003497506086
+    class_lat, class_lon = 19.197777803978884, 72.82653160301494
     distance = calculate_distance(lat, lon, class_lat, class_lon)
     status = "Present" if distance <= 200 else "Too Far"
     
@@ -216,32 +231,61 @@ def verify_attendance():
     except Exception as e: 
         return jsonify({"status": "error", "message": f"DB Error: {str(e)}"})
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        prn = request.form.get('prn')
-        password = request.form.get('password')
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT StudentName, StudentID FROM Students WHERE StudentID = ? AND Password = ?", (prn, password))
-            user = cursor.fetchone()
-            conn.close()
-            if user:
-                session['student_id'] = user[1]   
-                session['student_name'] = user[0] 
-                return redirect('/stats')
-            else:
-                return render_template('login.html', error="Invalid PRN or Password")
-        except Exception as e:
-            return f"Database Error: {str(e)}"
-    return render_template('login.html')
+@app.route('/login_teacher')
+def login_teacher_page():
+    return render_template('login_teacher.html')
 
-@app.route('/stats')
+@app.route('/login_student')
+def login_student_page():
+    return render_template('login_student.html')
+
+@app.route('/login', methods=['POST'])
+def login():
+    user_id = request.form.get('prn') # This is either StaffID or PRN
+    password = request.form.get('password')
+    role_type = request.form.get('role_type')
+    subject = request.form.get('subject')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if role_type == 'Teacher':
+        # Search ONLY in Teachers table
+        cursor.execute("SELECT TeacherName, StaffID FROM Teachers WHERE StaffID = ? AND Password = ?", (user_id, password))
+        user = cursor.fetchone()
+        if user:
+            session['student_id'], session['student_name'], session['user_role'] = user[1], user[0], 'Teacher'
+            return redirect(url_for('qr_display', subject=subject))
+
+    else:
+        # Search ONLY in Students table
+        cursor.execute("SELECT StudentName, StudentID FROM Students WHERE StudentID = ? AND Password = ?", (user_id, password))
+        user = cursor.fetchone()
+        if user:
+            session['student_id'], session['student_name'], session['user_role'] = user[1], user[0], 'Student'
+            return redirect(url_for('stats_page'))
+
+    conn.close()
+    return "Invalid Credentials for this Portal", 401
+
+@app.route('/logout')
+def logout():
+    role = session.get('user_role')
+    session.clear() # This removes the StaffID and Subject from memory
+    
+    # Professional Touch: Redirect them back to their specific portal
+    if role == 'Teacher':
+        return redirect(url_for('login_teacher_page'))
+    else:
+        return redirect(url_for('login_student_page'))
+
+@app.route('/stats', methods=['GET', 'POST']) # Added methods here
+@login_required(role="Student") # Added security for consistency
 def stats_page():
     prn = session.get('student_id')
     name = session.get('student_name')
-    if not prn: return redirect('/login')
+    if not prn: 
+        return redirect(url_for('login_student_page'))
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -262,23 +306,30 @@ def stats_page():
 
 @app.route('/report')
 def report_page():
+    # 1. SECURITY CHECK: Ensure only Teachers can enter
+    if session.get('user_role') != 'Teacher':
+        # If not a teacher, block access and send them away
+        return "Access Denied: You do not have permission to view this page.", 403
+
+    # 2. DATABASE LOGIC: Get the logs
     conn = get_db_connection()
     cursor = conn.cursor()
-    # Selecting the necessary columns from AttendanceLogs
     cursor.execute("SELECT StudentName, ScanTime, Status, Latitude, Longitude FROM AttendanceLogs ORDER BY ScanTime DESC")
     rows = cursor.fetchall()
     
-    # Formatting the ScanTime into separate Date and Time strings
+    # 3. DATA FORMATTING: Prepare for the HTML table
     attendance_data = [{
         "name": r[0], 
-        "date": r[1].strftime("%d-%b-%Y"),  # Added: e.g., 06-Mar-2026
-        "time": r[1].strftime("%I:%M %p"),  # Updated: e.g., 11:21 AM
+        "date": r[1].strftime("%d-%b-%Y"),
+        "time": r[1].strftime("%I:%M %p"),
         "status": r[2], 
         "lat": r[3], 
         "lon": r[4]
     } for r in rows]
     
     conn.close()
+    
+    # 4. RENDER: Send formatted data to the report template
     return render_template('report.html', logs=attendance_data)
 
 @app.route('/api/attendance_data')
@@ -286,24 +337,16 @@ def get_attendance_api():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        # Pulling latest logs for the live-sync table
-        cursor.execute("""
-            SELECT StudentName, ScanTime, Status, Latitude, Longitude 
-            FROM AttendanceLogs 
-            ORDER BY ScanTime DESC
-        """)
-        
+        cursor.execute("SELECT StudentName, ScanTime, Status, Latitude, Longitude FROM AttendanceLogs ORDER BY ScanTime DESC")
         rows = cursor.fetchall()
         conn.close()
 
-        # Formatting data to match your report.html requirements
         logs = []
         for r in rows:
             logs.append({
                 "name": r[0],
-                "date": r[1].strftime("%d-%b-%Y"), # Matches your new date column
-                "time": r[1].strftime("%I:%M %p"),  # Matches your updated time format
+                "date": r[1].strftime("%d-%b-%Y"),
+                "time": r[1].strftime("%I:%M %p"),
                 "status": r[2],
                 "lat": r[3],
                 "lon": r[4]
@@ -311,8 +354,6 @@ def get_attendance_api():
         return jsonify(logs)
     except Exception as e:
         return jsonify({"error": str(e)}), 500  
-    
-    
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

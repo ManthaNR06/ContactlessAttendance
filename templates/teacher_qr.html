@@ -11,28 +11,30 @@
             <a class="navbar-brand" href="/">Smart Attendance Portal</a>
             <div class="d-flex">
                 <a href="/" class="btn btn-outline-light btn-sm me-2">Home</a>
-                <a href="/login" class="btn btn-outline-danger btn-sm">Logout</a>
+                <a href="/report" class="btn btn-outline-light btn-sm me-2">View Reports</a>
+                
             </div>
         </div>
-    </nav>
+    </nav><hr>
 
     <div class="container mt-5">
         <h1 class="fw-bold">{{ subject }}</h1>
         <p class="text-secondary">Scanning allowed only in classroom range</p>
         
         <div class="bg-white d-inline-block p-4 rounded-4 shadow-lg mt-3">
-            <img id="qrImage" src="" alt="QR Code" style="width: 350px;">
+            <img id="qrImage" src="" alt="QR Code" style="width: 325px;">
         </div>
 
         <div class="mt-4">
-            <p id="timer" class="badge bg-primary fs-5">Refreshing in: 10s</p>
+            <p id="timer" class="badge bg-primary fs-5">Refreshing in: 15s</p>
         </div>
         
-        <a href="/teacher" class="btn btn-outline-light mt-3">Stop & Change Subject</a>
+        <a href="/logout" class="btn btn-outline-danger mt-3" style="border-radius: 8px; padding: 10px 20px;">
+    Stop Session & Logout </a>
     </div>
 
     <script>
-        let timeLeft = 90;
+        let timeLeft = 15;
         const subject = "{{ subject }}";
 
         function refreshQR() {
@@ -40,7 +42,7 @@
             .then(res => res.json())
             .then(data => {
                 document.getElementById('qrImage').src = "data:image/png;base64," + data.qr_code;
-                timeLeft = 90; // Reset timer
+                timeLeft = 15; // Reset timer
             });
         }
 

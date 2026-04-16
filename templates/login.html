@@ -3,67 +3,90 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Student Login - Statistics</title>
+    <title>Student Access - Smart Attendance</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { background-color: #f4f7f6; height: 100vh; display: flex; flex-direction: column; }
-        .login-container { flex: 1; display: flex; align-items: center; justify-content: center; }
-        .login-card { width: 100%; max-width: 400px; padding: 30px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); background: white; }
+        body { background: #f0f2f5; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .auth-card { border: none; border-radius: 20px; box-shadow: 0 15px 35px rgba(0,0,0,0.1); overflow: hidden; }
+        .auth-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px; text-align: center; }
+        .btn-primary { background: #764ba2; border: none; padding: 12px; border-radius: 10px; font-weight: 600; }
+        .btn-primary:hover { background: #667eea; }
+        .nav-tabs .nav-link { color: #6c757d; font-weight: 600; border: none; }
+        .nav-tabs .nav-link.active { color: #764ba2; border-bottom: 3px solid #764ba2; background: transparent; }
     </style>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark w-100">
-        <div class="container">
-            <a class="navbar-brand" href="/">Smart Attendance</a>
-            <div class="navbar-nav">
-                <a class="nav-link" href="/teacher">Teacher Portal</a>
-                <a class="nav-link active" href="/login">Student Stats</a>
-                <a class="navbar-brand" href="/report">View Reports</a>
+
+<div class="container d-flex align-items-center justify-content-center min-vh-100">
+    <div class="card auth-card w-100" style="max-width: 450px;">
+        <div class="auth-header">
+            <h2 class="fw-bold">Student Portal</h2>
+            <p class="mb-0 opacity-75">Access your attendance stats & history</p>
+        </div>
+        
+        <div class="card-body p-4">
+            <ul class="nav nav-tabs mb-4 justify-content-center" id="authTab" role="tablist">
+                <li class="nav-item">
+                    <button class="nav-link active" id="login-tab" data-bs-toggle="tab" data-bs-target="#login" type="button">Sign In</button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link" onclick="location.href='/register_face'">New Account</button>
+                </li>
+            </ul>
+
+            {% if error %}
+            <div class="alert alert-danger py-2 small text-center">{{ error }}</div>
+            {% endif %}
+
+            <div class="tab-content">
+                <div class="tab-pane fade show active" id="login">
+                    
+    <form action="/login" method="POST">
+    <div class="mb-3">
+        <label class="form-label small fw-bold">ID / PRN Number</label>
+        <input type="text" name="prn" class="form-control" placeholder="Enter your ID" required>
+    </div>
+    <div class="mb-3">
+        <label class="form-label small fw-bold">Password</label>
+        <input type="password" name="password" class="form-control" placeholder="••••••••" required>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label small fw-bold">I am a...</label>
+        <select name="role_type" id="role_type" class="form-select" onchange="toggleSubject()">
+            <option value="Student">Student</option>
+            <option value="Teacher">Teacher</option>
+        </select>
+    </div>
+
+    <div id="subject_div" class="mb-4" style="display: none;">
+        <label class="form-label small fw-bold">Select Subject</label>
+        <select name="subject" class="form-select">
+            <option value="Python Programming">Python Programming</option>
+            <option value="Java Development">Java Development</option>
+            <option value="DBMS">DBMS</option>
+            <option value="Web Tech">Web Tech</option>
+        </select>
+    </div>
+
+    <button type="submit" class="btn btn-primary w-100 shadow-sm">Enter Portal</button>
+</form>
+                </div>
+            </div>
+
+            <div class="mt-4 text-center">
+                <a href="/" class="text-decoration-none text-muted small">← Back to Home</a>
             </div>
         </div>
-    </nav>
-
-    <div class="login-container">
-       <div class="login-card text-center">
-    <h3 class="fw-bold mb-2">Student Portal</h3>
-    <p class="text-muted mb-4">Enter your PRN to access your history and stats</p>
-    
-    {% if error %}
-    <div class="alert alert-danger py-2 small">{{ error }}</div>
-    {% endif %}
-
-    <form action="/login" method="POST">
-        <div class="mb-3 text-start">
-            <label class="form-label small fw-bold">PRN (Permanent Registration Number)</label>
-            <input type="text" name="prn" class="form-control" placeholder="Enter your PRN" required>
-        </div>
-        <div class="mb-4 text-start">
-            <label class="form-label small fw-bold">Password</label>
-            <input type="password" name="password" class="form-control" placeholder="••••••••" required>
-        </div>
-        <button type="submit" class="btn btn-primary btn-lg w-100 shadow-sm">Login to Dashboard</button>
-    </form>
-    
-    <div class="hr-text my-4 text-muted">
-        <hr><span style="position: relative; top: -13px; background: #fff; padding: 0 10px;">OR</span>
-    </div>
-
-    <div class="registration-box p-3 border border-success rounded-3 bg-light">
-        <p class="small mb-2"><strong>New Student?</strong> Create an account with face recognition and device binding.</p>
-        <a href="/register_face" class="btn btn-success w-100">Register New Account</a>
-    </div>
-
-    <div class="mt-4">
-        <small class="text-muted d-block">Note: You cannot verify your face during attendance without a registered account.</small>
     </div>
 </div>
-    </div>
 
-    <script>
-        if (loginSuccessful) {
-    localStorage.setItem('saved_prn', document.getElementById('prn').value);
-    window.location.href = "/stats";
+<script>
+function toggleSubject() {
+    const role = document.getElementById('role_type').value;
+    const subjectDiv = document.getElementById('subject_div');
+    subjectDiv.style.display = (role === 'Teacher') ? 'block' : 'none';
 }
-    </script>
+</script>
 </body>
 </html>
