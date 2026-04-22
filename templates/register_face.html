@@ -6,7 +6,7 @@
     <title>Create Student Account</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { background-color: #f8f9fa; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+        body { background-color: #f4f7f6; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; font-family: 'Segoe UI', sans-serif; }
         .reg-card { background: white; padding: 2.5rem; border-radius: 20px; box-shadow: 0 15px 35px rgba(0,0,0,0.1); width: 100%; max-width: 450px; text-align: center; }
         .video-box { position: relative; width: 100%; border-radius: 15px; overflow: hidden; background: #222; border: 4px solid #dee2e6; margin-bottom: 1.5rem; }
         #video, #photo-preview { width: 100%; display: block; transform: scaleX(-1); border-radius: 12px; }
@@ -15,6 +15,8 @@
             width: 180px; height: 220px; border: 3px dashed rgba(255,255,255,0.5);
             border-radius: 50%; pointer-events: none; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.4);
         }
+        .form-control, .form-select { border-radius: 10px; padding: 12px; margin-bottom: 12px; border: 1px solid #ced4da; }
+        .form-label { font-size: 0.9rem; color: #495057; display: block; text-align: left; }
     </style>
 </head>
 <body>
@@ -23,9 +25,19 @@
     <h3 class="fw-bold mb-3">Create Student Account</h3>
     
     <div id="form-fields">
-        <input type="text" id="fullname" class="form-control mb-2" placeholder="Full Name" required>
-        <input type="text" id="prn" class="form-control mb-2" placeholder="PRN (Login ID)" required>
-        <input type="text" id="rollno" class="form-control mb-2" placeholder="Roll No" required>
+        <input type="text" id="fullname" class="form-control" placeholder="Full Name" required>
+        <input type="text" id="prn" class="form-control" placeholder="PRN (Login ID)" required>
+        
+        <div class="mb-2 text-start">
+            <label class="form-label fw-bold mb-1">Select Academic Year</label>
+            <select id="class_year" class="form-select shadow-sm">
+                <option value="1st Year">1st Year</option>
+                <option value="2nd Year">2nd Year</option>
+                <option value="3rd Year">3rd Year</option>
+            </select>
+        </div>
+
+        <input type="text" id="rollno" class="form-control" placeholder="Roll No" required>
         <input type="password" id="pass" class="form-control mb-3" placeholder="Password" required>
     </div>
 
@@ -49,6 +61,10 @@
     
     <canvas id="canvas" width="640" height="480" style="display:none;"></canvas>
     <div id="status" class="mt-3 fw-bold"></div>
+    
+    <div class="mt-4">
+        <a href="/login_student" class="text-decoration-none text-muted small">Already have an account? Login</a>
+    </div>
 </div>
 
 <script>
@@ -69,19 +85,13 @@
 
     function takePreview() {
         if (video.videoWidth === 0) return alert("Camera not ready!");
-
         const context = canvas.getContext('2d');
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
-
-        // Mirror the image
         context.translate(canvas.width, 0);
         context.scale(-1, 1);
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        
         finalImageData = canvas.toDataURL('image/jpeg', 0.9);
-        
-        // Show Preview
         document.getElementById('photo-preview').src = finalImageData;
         document.getElementById('camera-section').style.display = 'none';
         document.getElementById('preview-section').style.display = 'block';
@@ -99,10 +109,11 @@
         const fullName = document.getElementById('fullname').value;
         const prn = document.getElementById('prn').value;
         const rollNo = document.getElementById('rollno').value;
+        const classYear = document.getElementById('class_year').value; // Added
         const password = document.getElementById('pass').value;
 
-        if (!fullName || !prn || !rollNo || !password || !finalImageData) {
-            alert("Fill all details and capture your face!");
+        if (!fullName || !prn || !rollNo || !classYear || !password || !finalImageData) {
+            alert("Please fill all details and capture your face!");
             return;
         }
 
@@ -117,8 +128,12 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                fullname: fullName, prn: prn, rollno: rollNo, 
-                password: password, image: finalImageData, 
+                fullname: fullName, 
+                prn: prn, 
+                rollno: rollNo, 
+                class_year: classYear, // Passed to Backend
+                password: password, 
+                image: finalImageData, 
                 device_fingerprint: deviceID 
             })
         })
@@ -127,11 +142,15 @@
             if (data.status === 'success') {
                 statusMsg.innerText = "Success! Account Created.";
                 statusMsg.className = "mt-3 text-success";
-                setTimeout(() => { window.location.href = "/login"; }, 1500);
+                setTimeout(() => { window.location.href = "/login_student"; }, 1500);
             } else {
-                statusMsg.innerText = "Error: " + data.message;
+                statusMsg.innerText = "Error: " + (data.message || "Registration failed");
                 statusMsg.className = "mt-3 text-danger";
             }
+        })
+        .catch(err => {
+            statusMsg.innerText = "Error connecting to server.";
+            statusMsg.className = "mt-3 text-danger";
         });
     }
 

@@ -1,93 +1,246 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Attendance Report</title>
+    <title>Attendance Report - {{ subject }}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        body { background-color: #f4f7f6; font-family: 'Segoe UI', sans-serif; }
+        .card { border: none; transition: transform 0.2s; }
+        .stats-card { background: linear-gradient(45deg, #0d6efd, #0048b3); }
+        .percent-card { background: linear-gradient(45deg, #17a2b8, #117a8b); }
+        .export-panel { display: none; }
+        @media print { .btn, .navbar, .export-panel, .input-group { display: none !important; } }
+    </style>
 </head>
-<body class="bg-light">
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+<body>
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm">
   <div class="container">
-    <a class="navbar-brand" href="/">Smart Attendance</a>
+    <a class="navbar-brand fw-bold" href="/"><i class="bi bi-qr-code-scan"></i> Smart Attendance</a>
     <div class="navbar-nav ms-auto">
-      <a class="nav-link" href="javascript:history.back()">Back to QR Session</a>
-      <a class="nav-link" href="/logout">Logout</a>
+      <a class="nav-link" href="javascript:history.back()"><i class="bi bi-arrow-left-circle"></i> Back</a>
+      <a class="nav-link text-danger" href="/logout"><i class="bi bi-box-arrow-right"></i> Logout</a>
     </div>
   </div>
 </nav>
 
-    <nav class="navbar navbar-dark bg-primary mb-4">
-        <div class="container">
-            <span class="navbar-brand mb-0 h1">Class Attendance Report</span>
-            <div class="d-flex align-items-center">
-                <a href="/" class="btn btn-outline-light btn-sm">Back to QR Code</a>
+<div class="bg-white border-bottom py-4 mb-4 shadow-sm">
+    <div class="container">
+        <div class="row align-items-center">
+            <div class="col-md-6">
+                <h1 class="h3 mb-1 text-dark fw-bold">{{ subject }}</h1>
+                <p class="text-muted mb-0">Year: <span class="badge bg-secondary">{{ year }}</span></p>
+            </div>
+            <div class="col-md-6 text-md-end mt-3 mt-md-0">
+                <button onclick="toggleExportPanel()" class="btn btn-success px-4 me-2 shadow-sm">
+                    <i class="bi bi-file-earmark-spreadsheet"></i> Export Excel
+                </button>
+                <button onclick="window.print()" class="btn btn-outline-dark px-4 shadow-sm">
+                    <i class="bi bi-printer"></i> Print PDF
+                </button>
             </div>
         </div>
-    </nav>
+    </div>
+</div>
 
-    <div class="container">
-        <div class="card shadow">
-            <div class="card-body">
-                <table class="table table-hover">
-                    <thead class="table-dark">
-                      <tr>
-                        <th>Student Name</th>
-                        <th>Date</th> <th>Time</th>
-                        <th>Status</th>
-                        <th>Coordinates</th>
-                        </tr>
-                        </thead>
-
-                    <tbody id="attendance-table-body">
-                        {% for log in logs %}
-                        <tr>
-                            <td><strong>{{ log.name }}</strong></td>
-                            <td>{{ log.date }}</td> <td>{{ log.time }}</td>
-                            <td>
-                            <span class="badge {% if log.status == 'Present' %}bg-success{% else %}bg-danger{% endif %}">
-                                {{ log.status }}
-                            </span>
-                        </td>
-                        <td class="text-muted small">{{ log.lat }}, {{ log.lon }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-                </table>
+<div class="container">
+    <div id="exportPanel" class="card border-0 shadow-sm rounded-4 mb-4 export-panel">
+        <div class="card-header bg-success text-white py-2 fw-bold small">Configure Export Range</div>
+        <div class="card-body p-4">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold">From Date</label>
+                    <input type="date" id="startDate" class="form-control">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold">To Date</label>
+                    <input type="date" id="endDate" class="form-control">
+                </div>
+                <div class="col-md-6 d-flex gap-2">
+                    <button onclick="fetchAndDownload()" class="btn btn-primary flex-grow-1 fw-bold">Apply & Download</button>
+                    <button onclick="setQuickDate('week')" class="btn btn-outline-primary">Last Week</button>
+                    <button onclick="setQuickDate('month')" class="btn btn-outline-primary">Last Month</button>
+                    <button onclick="toggleExportPanel()" class="btn btn-light">Cancel</button>
+                </div>
             </div>
         </div>
     </div>
 
-    <script>
-        function fetchLiveUpdates() {
-            // Using the API route we created in app.py
-            fetch('/api/attendance_data')
-                .then(response => response.json())
-                .then(data => {
-                    const tableBody = document.getElementById('attendance-table-body');
-                     
-                    // Clear and rebuild table body
-                    tableBody.innerHTML = ''; 
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card stats-card text-white shadow-sm rounded-4 h-100">
+                <div class="card-body p-4 text-center">
+                    <h6 class="text-uppercase small fw-bold opacity-75">Present Today</h6>
+                    <h2 class="display-5 fw-bold mb-0" id="present-count">0</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card percent-card text-white shadow-sm rounded-4 h-100">
+                <div class="card-body p-4 text-center">
+                    <h6 class="text-uppercase small fw-bold opacity-75">Attendance %</h6>
+                    <h2 class="display-5 fw-bold mb-0" id="attendance-percentage">0%</h2>
+                </div>
+            </div>
+        </div>
+    </div>
 
-                    data.forEach(log => {
-                        const badgeClass = log.status === 'Present' ? 'bg-success' : 'bg-danger';
-                        const row = `
-                            <tr>
-                                <td><strong>${log.name}</strong></td>
-                                <td>${log.date}</td> <td>${log.time}</td>
-                                <td><span class="badge ${badgeClass}">${log.status}</span></td>
-                                <td class="text-muted small">${log.lat}, ${log.lon}</td>
-                            </tr>
-                        `;
-                        tableBody.innerHTML += row;
-                    });
-                })
-                .catch(err => {
-                    console.error('Fetch error:', err);
-                    document.getElementById('sync-indicator').innerText = "Sync Error";
-                });
-        }
+    <div class="mb-4">
+        <div class="input-group shadow-sm rounded-3 overflow-hidden">
+            <span class="input-group-text bg-white border-0"><i class="bi bi-search"></i></span>
+            <input type="text" id="studentSearch" class="form-control border-0 p-3" placeholder="Search student name..." onkeyup="filterTable()">
+        </div>
+    </div>
 
-        // Poll the server every 3 seconds for new attendance marks
-        setInterval(fetchLiveUpdates, 3000);
-    </script>
+    <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-5">
+        <div class="card-body p-0">
+            <table class="table table-hover align-middle mb-0" id="attendance-table">
+               <thead class="table-dark">
+    <tr>
+        <th>Roll No</th> <th>Student Name</th>
+        <th>Class Year</th>
+        <th>Date</th>
+        <th>Time</th>
+        <th>Status</th>
+        <th>Coordinates</th>
+    </tr>
+</thead>
+                <tbody id="attendance-table-body"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+    // Pull the total enrolled from background
+    const TOTAL_ENROLLED = parseInt("{{ total_enrolled }}") || 0;
+
+    function formatToDMY(dateStr) {
+        if (!dateStr || !dateStr.includes('-')) return dateStr;
+        const [y, m, d] = dateStr.split('-');
+        return `${d}-${m}-${y}`;
+    }
+
+    function toggleExportPanel() {
+        const panel = document.getElementById('exportPanel');
+        panel.style.display = (panel.style.display === 'block') ? 'none' : 'block';
+    }
+
+function fetchLiveUpdates() {
+    fetch('/api/attendance_data').then(res => res.json()).then(data => {
+        // 1. Get Today's Date in raw format for comparison
+        const now = new Date();
+        const todayRaw = now.getFullYear() + '-' + 
+                         String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+                         String(now.getDate()).padStart(2, '0');
+        
+        // Format today's date for display (DD-MM-YYYY)
+        const todayDisplay = formatToDMY(todayRaw);
+
+        // 2. Identify who is present TODAY
+        const todayLogs = data.logs.filter(log => log.date === todayRaw);
+        const presentNamesToday = todayLogs.map(log => log.name);
+        
+        // Update Cards
+        const presentCount = [...new Set(presentNamesToday)].length;
+        document.getElementById('present-count').innerText = `${presentCount} / ${data.all_students.length}`;
+        document.getElementById('attendance-percentage').innerText = 
+            (data.all_students.length > 0 ? (presentCount / data.all_students.length * 100).toFixed(1) : 0) + '%';
+
+        // 3. Build the Table Body
+        const tableBody = document.getElementById('attendance-table-body');
+        let html = `<tr class="table-light"><td colspan="7" class="fw-bold text-center py-2">--- Today's Status: ${todayDisplay} ---</td></tr>`;
+
+        // Today's list is already sorted by SQL
+        data.all_students.forEach(student => {
+            const log = todayLogs.find(l => l.name === student.name);
+            const isPresent = !!log;
+
+            html += `<tr>
+                <td>${student.roll_no}</td> 
+                <td><strong>${student.name}</strong></td>
+                <td>${student.class_year}</td>
+                <td>${todayDisplay}</td> <td>${isPresent ? log.time : '--:--'}</td>
+                <td>
+                    <span class="badge ${isPresent ? 'bg-success' : 'bg-danger'}">
+                        ${isPresent ? 'Present' : 'Absent'}
+                    </span>
+                </td>
+                <td class="text-muted small">${isPresent ? `<code>${log.lat}, ${log.lon}</code>` : 'N/A'}</td>
+            </tr>`;
+        });
+
+        // 4. Show Historical Data below Today's list
+        const pastLogs = data.logs.filter(log => log.date !== todayRaw);
+
+        // FIX: Sort historical logs by Roll Number (Numerical)
+        pastLogs.sort((a, b) => {
+            const studentA = data.all_students.find(s => s.name === a.name);
+            const studentB = data.all_students.find(s => s.name === b.name);
+            const rollA = studentA ? parseInt(studentA.roll_no) : 0;
+            const rollB = studentB ? parseInt(studentB.roll_no) : 0;
+            return rollA - rollB;
+        });
+
+        let lastDate = "";
+        pastLogs.forEach(log => {
+            const dmy = formatToDMY(log.date); 
+            if (log.date !== lastDate) {
+                html += `<tr class="table-light"><td colspan="7" class="fw-bold text-center py-2">--- ${dmy} ---</td></tr>`;
+                lastDate = log.date;
+            }
+
+            const studentInfo = data.all_students.find(s => s.name === log.name);
+            const rollNo = studentInfo ? studentInfo.roll_no : 'N/A';
+
+            html += `<tr>
+                <td>${rollNo}</td> 
+                <td>${log.name}</td>
+                <td>${log.class_year || '{{ year }}'}</td> 
+                <td>${dmy}</td> <td>${log.time}</td>
+                <td><span class="badge bg-success">Present</span></td>
+                <td class="text-muted small"><code>${log.lat}, ${log.lon}</code></td>
+            </tr>`;
+        });
+
+        tableBody.innerHTML = html;
+    });
+}
+
+    function fetchAndDownload() {
+        const start = document.getElementById('startDate').value;
+        const end = document.getElementById('endDate').value;
+        if(!start || !end) return alert("Please select dates.");
+        fetchLiveUpdates();
+        setTimeout(() => {
+            const table = document.getElementById("attendance-table");
+            const wb = XLSX.utils.table_to_book(table, {sheet: "Attendance"});
+            XLSX.writeFile(wb, `Report_${formatToDMY(start)}_to_${formatToDMY(end)}.xlsx`);
+            toggleExportPanel();
+        }, 600);
+    }
+
+    function filterTable() {
+        const q = document.getElementById("studentSearch").value.toUpperCase();
+        document.querySelectorAll("#attendance-table-body tr:not(.table-light)").forEach(row => {
+            row.style.display = row.innerText.toUpperCase().includes(q) ? "" : "none";
+        });
+    }
+
+    function setQuickDate(range) {
+        const end = new Date();
+        const start = new Date();
+        if (range === 'week') start.setDate(end.getDate() - 7);
+        else start.setMonth(end.getMonth() - 1);
+        document.getElementById('startDate').value = start.toISOString().split('T')[0];
+        document.getElementById('endDate').value = end.toISOString().split('T')[0];
+        fetchLiveUpdates();
+    }
+
+    document.addEventListener('DOMContentLoaded', fetchLiveUpdates);
+    setInterval(fetchLiveUpdates, 5000);
+</script>
 </body>
 </html>

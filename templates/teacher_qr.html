@@ -3,7 +3,31 @@
 <head>
     <title>Live QR - {{ subject }}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+
+    #live-counter-container {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        text-align: center;
+        z-index: 1000;
+        color: white; /* Text color for dark background */
+    }
+
+    #student-counter {
+        display: block;
+        font-size: 3.5rem; /* Larger font size */
+        font-weight: bold;
+        color: rgb(47, 0, 255); /* Primary blue color */
+        line-height: 1;
+        transition: transform 0.3s ease, color 0.3s ease;
+    }
+</style>
+
+</style>
 </head>
+
 <body class="bg-dark text-white text-center">
 
     <nav class="navbar navbar-dark bg-dark">
@@ -16,6 +40,14 @@
             </div>
         </div>
     </nav><hr>
+
+  <div id="live-counter-container">
+    <div class="small opacity-75">Today's Attendance</div>
+    <div id="student-counter">0</div>
+    <div class="small text-success">
+        <span class="spinner-grow spinner-grow-sm"></span> Live
+    </div>
+</div>
 
     <div class="container mt-5">
         <h1 class="fw-bold">{{ subject }}</h1>
@@ -53,6 +85,43 @@
         }, 1000);
 
         window.onload = refreshQR; // Load first QR immediately
+
+    let lastCount = 0; // Tracks the count from the previous check
+
+function updateLiveCount() {
+    const subject = "{{ subject }}"; 
+    
+    fetch(`/api/student_count/${subject}`)
+        .then(response => response.json())
+        .then(data => {
+            const counterElement = document.getElementById('student-counter');
+            const newCount = data.count;
+
+            if (counterElement) {
+                // If a new student is detected
+                if (newCount > lastCount) {
+                    // Trigger Visual Alert: Turn green and pop out
+                    counterElement.style.color = "#198754"; // Bootstrap Success Green
+                    counterElement.style.transform = "scale(1.3)";
+                    counterElement.style.transition = "all 0.3s ease";
+                    
+                    // Reset to normal after 500ms
+                    setTimeout(() => {
+                        counterElement.style.color = "#0d6efd"; // Original Blue
+                        counterElement.style.transform = "scale(1)";
+                    }, 500);
+                }
+                
+                counterElement.innerText = newCount;
+                lastCount = newCount; 
+            }
+        })
+        .catch(err => console.error("Counter Error:", err));
+}
+
+// Check every 3 seconds
+setInterval(updateLiveCount, 3000);
+updateLiveCount();
     </script>
 </body>
 </html>

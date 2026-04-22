@@ -1,50 +1,369 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Smart Attendance</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #f8f9fa; font-family: 'Segoe UI', sans-serif; }
+        .navbar { background: #2c3e50; }
+        .card { border: none; border-radius: 15px; }
+        .table-container { background: white; border-radius: 15px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .badge-none { background-color: #6c757d; color: white; }
+        .year-header { border-left: 5px solid #0d6efd; padding-left: 15px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
 
-<div class="container mt-5">
-    <h2 class="mb-4">User Authority Management</h2>
-    <table class="table table-hover bg-white shadow-sm rounded">
-        <thead class="table-dark">
-            <tr>
-                <th>PRN</th>
-                <th>Name</th>
-                <th>Current Role</th>
-                <th>Action</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for user in users %}
-            <tr>
-                <td>{{ user[0] }}</td>
-                <td>{{ user[1] }}</td>
-                <td><span class="badge bg-info">{{ user[2] }}</span></td>
-                <td>
-                    <select class="form-select form-select-sm d-inline-block w-auto" 
-                            onchange="changeRole('{{ user[0] }}', this.value)">
-                        <option value="">Change to...</option>
-                        <option value="Student">Student</option>
-                        <option value="Teacher">Teacher</option>
-                        <option value="Admin">Admin</option>
-                    </select>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+<nav class="navbar navbar-dark mb-4">
+    <div class="container">
+        <a class="navbar-brand fw-bold" href="/">Admin Dashboard</a>
+        <div class="d-flex">
+            <a href="/" class="btn btn-outline-light btn-sm me-2">Home</a>
+            <a href="/logout" class="btn btn-danger btn-sm">Logout</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container">
+    <div class="card shadow-sm mb-5">
+        <div class="card-header bg-primary text-white py-3">
+            <h5 class="mb-0">Teacher Onboarding & Subject Mapping</h5>
+        </div>
+        <div class="card-body p-4">
+            <div class="row g-3 mb-4">
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold">Full Name</label>
+                    <input type="text" id="t_name" class="form-control" placeholder="Enter Full Name">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold">Staff ID</label>
+                    <input type="text" id="t_id" class="form-control" placeholder="ID">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold">Password</label>
+                    <input type="password" id="t_pass" class="form-control" placeholder="Password">
+                </div>
+            </div>
+
+            <hr>
+            <h6 class="fw-bold mb-3">Assign Subjects</h6>
+            <div id="subject-rows-container">
+                <div class="row g-3 subject-row mb-2">
+                    <div class="col-md-5">
+                        <select class="form-select t-year">
+                            <option value="1st Year">1st Year</option>
+                            <option value="2nd Year">2nd Year</option>
+                            <option value="3rd Year">3rd Year</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <input type="text" class="form-control t-subj" placeholder="Enter Subject">
+                    </div>
+                    <div class="col-md-1">
+                        <button type="button" class="btn btn-outline-primary w-100" onclick="addRow()">+</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 text-end mt-4">
+                <button id="btnOnboard" onclick="onboardTeacher()" class="btn btn-success px-5 fw-bold shadow-sm">Save Teacher & All Subjects</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-5 border-0 rounded-4">
+        <div class="card-header bg-dark text-white py-3">
+            <h5 class="mb-0">College Timetable Manager</h5>
+        </div>
+        <div class="card-body p-4">
+            <h6 class="text-primary fw-bold mb-3">Add/Update Lecture Entry</h6>
+            
+            <div class="row g-2 align-items-center">
+    <div class="col-md-2">
+        <select id="tt-year" class="form-select">
+            <option>1st Year</option><option>2nd Year</option><option>3rd Year</option>
+        </select>
+    </div>
+    <div class="col-md-2">
+        <select id="tt-day" class="form-select">
+            <option>Monday</option><option>Tuesday</option><option>Wednesday</option>
+            <option>Thursday</option><option>Friday</option><option>Saturday</option>
+        </select>
+    </div>
+    <div class="col-md-2">
+        <select id="tt-time" class="form-select">
+            <option value="11:00 AM - 12:00 PM">11:00 - 12:00</option>
+            <option value="12:00 PM - 01:00 PM">12:00 - 01:00</option>
+            <option value="01:00 PM - 02:00 PM">01:00 - 02:00</option>
+            <option value="02:00 PM - 03:00 PM">02:00 - 03:00</option>
+        </select>
+    </div>
+    <div class="col-md-2">
+        <input type="text" id="tt-subject" class="form-control" placeholder="Subject">
+    </div>
+    <div class="col-md-2">
+        <input type="text" id="tt-lecturer" class="form-control" placeholder="Lecturer">
+    </div>
+    <div class="col-md-2">
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="copy-all-days">
+            <label class="form-check-label small" for="copy-all-days">Mon-Sat</label>
+        </div>
+    </div>
+    <div class="col-md-12 text-end mt-2">
+        <button onclick="saveLecture()" class="btn btn-primary px-4 shadow-sm">Save Lecture</button>
+    </div>
+</div>
+        </div>
+    </div>
+
+    <div id="timetable-sections">
+        <div class="text-center text-muted p-5 bg-white rounded-4 shadow-sm mb-5">
+            Loading timetable data...
+        </div>
+    </div>
+
+    <div class="table-container mb-5">
+        <h4 class="mb-4 fw-bold text-secondary">User Authority Management</h4>
+        <table class="table table-hover align-middle">
+            <thead class="table-dark">
+                <tr>
+                    <th>PRN / ID</th><th>Name</th><th>Current Role</th><th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr>
+                    <td><code>{{ user[0] }}</code></td>
+                    <td>{{ user[1] }}</td>
+                    <td>
+                        <span class="badge {% if user[2] == 'Admin' %}bg-danger{% elif user[2] == 'Teacher' %}bg-primary{% elif user[2] == 'Student' %}bg-info{% else %}badge-none{% endif %}">
+                            {{ user[2] if user[2] else 'None' }}
+                        </span>
+                    </td>
+                    <td>
+                        <select class="form-select form-select-sm d-inline-block w-auto" onchange="changeRole('{{ user[0] }}', this.value)">
+                            <option value="">Promote/Demote...</option>
+                            <option value="Student">Student</option>
+                            <option value="Teacher">Teacher</option>
+                            <option value="Admin">Admin</option>
+                        </select>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 
 <script>
+// --- ONBOARDING LOGIC ---
+function addRow() {
+    const container = document.getElementById('subject-rows-container');
+    const newRow = document.createElement('div');
+    newRow.className = 'row g-3 subject-row mb-2';
+    newRow.innerHTML = `
+        <div class="col-md-5">
+            <select class="form-select t-year">
+                <option value="1st Year">1st Year</option><option value="2nd Year">2nd Year</option><option value="3rd Year">3rd Year</option>
+            </select>
+        </div>
+        <div class="col-md-6">
+            <input type="text" class="form-control t-subj" placeholder="Enter Subject">
+        </div>
+        <div class="col-md-1">
+            <button type="button" class="btn btn-outline-danger w-100" onclick="this.parentElement.parentElement.remove()">-</button>
+        </div>
+    `;
+    container.appendChild(newRow);
+}
+
+function onboardTeacher() {
+    const btn = document.getElementById('btnOnboard');
+    const teacherData = {
+        name: document.getElementById('t_name').value,
+        staff_id: document.getElementById('t_id').value,
+        password: document.getElementById('t_pass').value,
+        mappings: []
+    };
+
+    document.querySelectorAll('.subject-row').forEach(row => {
+        const year = row.querySelector('.t-year').value;
+        const subject = row.querySelector('.t-subj').value;
+        if(subject) teacherData.mappings.push({ year, subject });
+    });
+
+    if(!teacherData.name || !teacherData.staff_id || teacherData.mappings.length === 0) {
+        alert("Please fill in teacher details and at least one subject.");
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerText = "Processing...";
+
+    fetch('/admin/add_teacher_full', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(teacherData)
+    })
+    .then(r => r.json())
+    .then(data => {
+        alert(data.message);
+        location.reload();
+    });
+}
+
+// --- AUTHORITY LOGIC ---
 function changeRole(prn, newRole) {
     if(!newRole) return;
     fetch('/admin/update_role', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ prn: prn, role: newRole })
-    }).then(res => res.json()).then(data => {
+        body: JSON.stringify({ prn: prn.toString(), role: newRole })
+    })
+    .then(res => res.json())
+    .then(data => {
         alert(data.message);
-        location.reload(); // Refresh to show updated badges
+        location.reload();
     });
 }
+
+// --- TIMETABLE LOGIC ---
+function saveLecture() {
+    const isFullWeek = document.getElementById('copy-all-days').checked;
+    const days = isFullWeek 
+        ? ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] 
+        : [document.getElementById('tt-day').value];
+
+    const basePayload = {
+        year: document.getElementById('tt-year').value,
+        time: document.getElementById('tt-time').value,
+        subject: document.getElementById('tt-subject').value,
+        lecturer: document.getElementById('tt-lecturer').value
+    };
+
+    if (!basePayload.subject || !basePayload.lecturer) {
+        alert("Please fill in both Subject and Lecturer name.");
+        return;
+    }
+
+    // Process all selected days
+    const requests = days.map(day => {
+        return fetch('/admin/save_timetable', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...basePayload, day: day })
+        }).then(res => res.json());
+    });
+
+    Promise.all(requests)
+        .then(results => {
+            const hasError = results.some(r => r.status === "error");
+            if (hasError) {
+                const errorMsg = results.find(r => r.status === "error").message;
+                alert("Some entries failed: " + errorMsg);
+            } else {
+                alert(isFullWeek ? "Full week scheduled!" : "Entry Saved!");
+            }
+            loadTimetable(); // Refresh the grid
+        })
+        .catch(err => console.error("Batch save failed:", err));
+}
+
+function loadTimetable() {
+    fetch('/api/get_full_timetable')
+        .then(res => res.json())
+        .then(data => {
+            const container = document.getElementById('timetable-sections');
+            container.innerHTML = ''; // Clear container
+
+            // Defined Years, Days, and Time Slots
+            const years = ['1st Year', '2nd Year', '3rd Year'];
+            const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            const timeSlots = [
+                '11:00 AM - 12:00 PM',
+                '12:00 PM - 01:00 PM',
+                '01:00 PM - 02:00 PM',
+                '02:00 PM - 03:00 PM'
+            ];
+
+            // Generate a separate matrix table for each year
+            years.forEach(year => {
+                const yearData = data.filter(item => item.year === year);
+                if (yearData.length === 0) return; // Skip if no data for this year
+
+                const section = document.createElement('div');
+                section.className = 'mb-5';
+                
+                // Matrix HTML Structure
+                let tableHtml = `
+                    <div class="year-header">
+                        <h4 class="fw-bold text-dark mb-1">${year}</h4>
+                    </div>
+                    <div class="table-responsive rounded-4 shadow-sm bg-white p-3">
+                        <table class="table table-bordered table-hover align-middle mb-0">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>Time</th>
+                                    ${days.map(day => `<th>${day}</th>`).join('')}
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+
+                // Generate each Time Slot row
+                timeSlots.forEach(time => {
+                    const rowTimeData = yearData.filter(item => item.time === time);
+                    tableHtml += `
+                        <tr>
+                            <td class="fw-bold text-muted small">${time}</td>
+                    `;
+
+                    // Generate a cell for each day, checking if data exists
+                    days.forEach(day => {
+                        const cellData = rowTimeData.find(item => item.day === day);
+                        if (cellData) {
+                            tableHtml += `
+                                <td class="p-3 position-relative">
+                                    <div class="fw-bold text-primary">${cellData.subject}</div>
+                                    <div class="text-muted small">${cellData.lecturer}</div>
+                                    <button onclick="deleteLecture(${cellData.id})" class="btn btn-sm text-danger border-0 position-absolute top-0 end-0 p-1" style="font-size: 10px;">&times;</button>
+                                </td>
+                            `;
+                        } else {
+                            tableHtml += `<td class="text-muted small text-center">-</td>`;
+                        }
+                    });
+
+                    tableHtml += `</tr>`;
+                });
+
+                tableHtml += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                section.innerHTML = tableHtml;
+                container.appendChild(section);
+            });
+        });
+}
+
+function deleteLecture(id) {
+    if (!confirm("Remove this lecture?")) return;
+    fetch(`/admin/delete_lecture/${id}`, { method: 'DELETE' })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === "success") loadTimetable();
+        });
+}
+
+document.addEventListener('DOMContentLoaded', loadTimetable);
 </script>
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
 </html>
