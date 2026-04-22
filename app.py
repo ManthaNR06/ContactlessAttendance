@@ -10,7 +10,8 @@ import pyodbc
 import qrcode
 from functools import wraps # Added for the decorator
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
-
+from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import datetime, timedelta
 
 # --- CONFIGURATION ---
 # IMPORTANT: Update this every time you restart ngrok!
@@ -89,18 +90,35 @@ def teacher_page():
 @login_required(role="Teacher")
 def qr_display(subject):
     return render_template('teacher_qr.html', subject=subject)
-
 @app.route('/generate_qr_api')
 def generate_qr_api():
-    global recent_tokens
+    # We are removing 'global recent_tokens' because we use the DB now!
     subject = request.args.get('subject', 'General')
+    class_year = session.get('selected_class')
+    
+    # 1. Generate the token
     new_token = f"{uuid.uuid4()}|{subject}"
-    recent_tokens.append(new_token)
-    if len(recent_tokens) > 5:
-        recent_tokens.pop(0)
     
+    # 2. Set expiry (e.g., 2 minutes to handle the 15s refresh cycle safely)
+    expires_at = datetime.now() + timedelta(minutes=2)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # 3. Save to your new database table
+    cursor.execute("""
+        INSERT INTO ActiveQRSessions (TokenValue, SubjectName, ClassYear, ExpiresAt)
+        VALUES (?, ?, ?, ?)
+    """, (new_token, subject, class_year, expires_at))
+    
+    # 4. Optional: Auto-cleanup old tokens while we are here
+    cursor.execute("DELETE FROM ActiveQRSessions WHERE ExpiresAt < GETDATE()")
+    
+    conn.commit()
+    conn.close()
+    
+    # 5. Generate the QR as usual
     full_url = f"{PUBLIC_URL}/auto_verify/{new_token}"
-    
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
     qr.add_data(full_url)
     qr.make(fit=True)
@@ -108,8 +126,8 @@ def generate_qr_api():
     buffered = io.BytesIO()
     img.save(buffered)
     qr_img_data = base64.b64encode(buffered.getvalue()).decode()
+    
     return jsonify({"qr_code": qr_img_data})
-
 @app.route('/auto_verify/<token>')
 def auto_verify(token):
     return render_template('auto_verify.html', token=token)
@@ -125,6 +143,7 @@ def register_face():
     rollno = data.get('rollno')
     class_year = data.get('class_year')
     password = data.get('password')
+    hashed_password = generate_password_hash(password) # Scramble the password
     fingerprint = data.get('device_fingerprint')
     image_data = data.get('image')
 
@@ -140,9 +159,9 @@ def register_face():
         cursor = conn.cursor()
         # Added 'Student' as the default role for new registrations
         cursor.execute("""
-        INSERT INTO Students (StudentID, Password, StudentName, DeviceID, RollNo, PRN, Role, ClassYear) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", 
-        (prn, password, fullname, fingerprint, rollno, prn, 'Student', class_year)) 
+    INSERT INTO Students (StudentID, Password, StudentName, DeviceID, RollNo, PRN, Role, ClassYear) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", 
+(prn, hashed_password, fullname, fingerprint, rollno, prn, 'Student', class_year))
         conn.commit()
         conn.close()
         return jsonify({"status": "success", "message": "Account created!"})
@@ -153,7 +172,7 @@ def register_face():
 
 @app.route('/verify_attendance', methods=['POST'])
 def verify_attendance():
-    global recent_tokens
+    # Removed: global recent_tokens (We now use the database)
     data = request.json
     student_id = session.get('student_id') or data.get('prn')
     current_device = data.get('device_fingerprint')
@@ -164,24 +183,30 @@ def verify_attendance():
     if not student_id:
         return jsonify({"status": "fail", "message": "Identity missing! Please login first."})
 
-    if full_token not in recent_tokens:
-        return jsonify({"status": "fail", "message": "QR Expired!"})
-
-    # Extract subject from the token
-    scanned_token, subject = full_token.split("|", 1) if "|" in full_token else (full_token, "General")
-
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # 1. ROBUST CLASS YEAR LOOKUP (Teacher's Target Year)
-    class_year = session.get('selected_class')
-    if not class_year:
-        cursor.execute("SELECT ClassYear FROM TeacherSubjects WHERE SubjectName = ?", (subject,))
-        row = cursor.fetchone()
-        class_year = row[0] if row else 'N/A'
+    # --- NEW: DATABASE TOKEN VALIDATION ---
+    # Check if the token exists and is not expired
+    cursor.execute("""
+        SELECT SubjectName, ClassYear FROM ActiveQRSessions 
+        WHERE TokenValue = ? AND ExpiresAt > GETDATE()
+    """, (full_token,))
+    
+    session_row = cursor.fetchone()
 
-    # 2. STUDENT VALIDATION (Including their Registered Year)
-    # We now fetch ClassYear from the Students table
+    if not session_row:
+        conn.close()
+        return jsonify({"status": "fail", "message": "QR Expired or Invalid!"})
+
+    # Extract subject and target year from the database session
+    subject = session_row[0]
+    class_year = session_row[1]
+    
+    # Keep the token ID for the log (strip the subject part if necessary)
+    scanned_token = full_token.split("|", 1)[0] if "|" in full_token else full_token
+
+    # 1. STUDENT VALIDATION (Including their Registered Year)
     cursor.execute("SELECT StudentName, DeviceID, ClassYear FROM Students WHERE StudentID = ?", (student_id,))
     user = cursor.fetchone()
     
@@ -191,8 +216,7 @@ def verify_attendance():
     
     student_name, stored_device, student_registered_year = user[0], user[1], user[2]
 
-    # --- NEW: ACADEMIC YEAR RESTRICTION ---
-    # Check if student's registered year matches the subject's year
+    # --- ACADEMIC YEAR RESTRICTION ---
     if student_registered_year != class_year:
         conn.close()
         return jsonify({
@@ -200,7 +224,7 @@ def verify_attendance():
             "message": f"Access Denied! You are a {student_registered_year} student. This QR is for {class_year}."
         })
 
-    # 3. Security: Device Fingerprint Check
+    # 2. Security: Device Fingerprint Check
     if stored_device and stored_device != current_device:
         conn.close()
         return jsonify({"status": "fail", "message": "Security Alert: Unauthorized Device!"})
@@ -219,7 +243,7 @@ def verify_attendance():
         
         if student_master_encoding is None:
             conn.close()
-            return jsonify({"status": "fail", "message": "Face Engine Error: Could not read master photo."})
+            return jsonify({"status": "fail", "message": "Face Engine Error: Master photo unreadable."})
 
         img_np = np.frombuffer(image_bytes, dtype=np.uint8)
         img = cv2.imdecode(img_np, cv2.IMREAD_COLOR)
@@ -248,7 +272,7 @@ def verify_attendance():
     status = "Present" if distance <= 200 else "Too Far"
     
     try:
-        # 4. DUPLICATE CHECK
+        # 3. DUPLICATE CHECK
         cursor.execute("""
             SELECT 1 FROM AttendanceLogs 
             WHERE StudentName = ? 
@@ -261,7 +285,7 @@ def verify_attendance():
             conn.close()
             return jsonify({"status": "fail", "message": "Attendance already marked for this subject today!"})
 
-        # 5. SAVE TO DATABASE
+        # 4. SAVE TO DATABASE
         cursor.execute("""
             INSERT INTO AttendanceLogs (StudentName, TokenUsed, Status, SubjectName, ClassYear, Latitude, Longitude) 
             VALUES (?, ?, ?, ?, ?, ?, ?)""",
@@ -317,46 +341,60 @@ def login():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # 1. ADMIN LOGIN LOGIC (Checks dedicated Admins table)
+    # 1. ADMIN LOGIN LOGIC
     if role_type == 'Admin':
-        cursor.execute("SELECT AdminName, Username FROM Admins WHERE Username = ? AND Password = ?", (user_id, password))
+        cursor.execute("SELECT AdminName, Username, Password FROM Admins WHERE Username = ?", (user_id,))
         user = cursor.fetchone()
-        if user:
+        
+        if user and check_password_hash(user[2], password):
             session['student_id'] = user[1]
             session['student_name'] = user[0]
             session['user_role'] = 'Admin'
             conn.close()
             return redirect(url_for('admin_panel'))
+        else:
+            conn.close()
+            return "Invalid Admin Credentials", 401
 
-    # 2. TEACHER LOGIN LOGIC
+    # 2. TEACHER LOGIN LOGIC (Updated for Dashboard)
     elif role_type == 'Teacher':
-        cursor.execute("SELECT TeacherName, StaffID FROM Teachers WHERE StaffID = ? AND Password = ?", (user_id, password))
+        cursor.execute("SELECT TeacherName, StaffID, Password FROM Teachers WHERE StaffID = ?", (user_id,))
         user = cursor.fetchone()
         
-        if user:
+        if user and check_password_hash(user[2], password):
+            # Check if teacher has an assignment for the selected year
             cursor.execute("SELECT SubjectName FROM TeacherSubjects WHERE StaffID = ? AND ClassYear = ?", (user_id, class_year))
             subject_row = cursor.fetchone()
             
             if subject_row:
-                auto_subject = subject_row[0]
                 session['student_id'] = user[1]
                 session['student_name'] = user[0]
                 session['user_role'] = 'Teacher'
                 session['selected_class'] = class_year
                 conn.close()
-                return redirect(url_for('qr_display', subject=auto_subject))
+                # REDIRECT TO DASHBOARD instead of qr_display
+                return redirect(url_for('teacher_dashboard'))
             else:
                 conn.close()
                 return "Error: No subject assigned to you for this year.", 403
+        else:
+            conn.close()
+            return "Invalid Teacher Credentials", 401
 
     # 3. STUDENT LOGIN LOGIC
     else:
-        cursor.execute("SELECT StudentName, StudentID FROM Students WHERE StudentID = ? AND Password = ?", (user_id, password))
+        cursor.execute("SELECT StudentName, StudentID, Password FROM Students WHERE StudentID = ?", (user_id,))
         user = cursor.fetchone()
-        if user:
-            session['student_id'], session['student_name'], session['user_role'] = user[1], user[0], 'Student'
+
+        if user and check_password_hash(user[2], password):
+            session['student_id'] = user[1]
+            session['student_name'] = user[0]
+            session['user_role'] = 'Student'
             conn.close()
             return redirect(url_for('stats_page'))
+        else:
+            conn.close()
+            return "Invalid Student Credentials", 401
 
     conn.close()
     return "Invalid Credentials", 401
@@ -548,45 +586,72 @@ def get_assigned_subject():
 @login_required(role="Admin") 
 def add_teacher_full():
     data = request.json
-    name, staff_id, password = data.get('name'), data.get('staff_id'), data.get('password')
-    mappings = data.get('mappings') # This is now a list
+    name = data.get('name')
+    staff_id = data.get('staff_id')
+    password = data.get('password')
+    mappings = data.get('mappings') # This comes from your frontend list
+
+    hashed_pw = generate_password_hash(password)
 
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        # 1. Ensure teacher exists
+        # 1. Create the main Teacher account if it doesn't exist
         cursor.execute("SELECT 1 FROM Teachers WHERE StaffID = ?", (staff_id,))
         if not cursor.fetchone():
             cursor.execute("INSERT INTO Teachers (TeacherName, StaffID, Password) VALUES (?, ?, ?)", 
-                           (name, staff_id, password))
+                           (name, staff_id, hashed_pw))
         
-        # 2. Loop through each mapping and update/insert
-        for m in mappings:
-            year, subject = m.get('year'), m.get('subject')
-            cursor.execute("""
-                IF EXISTS (SELECT 1 FROM TeacherSubjects WHERE StaffID=? AND ClassYear=?)
-                    UPDATE TeacherSubjects SET SubjectName=? WHERE StaffID=? AND ClassYear=?
-                ELSE
-                    INSERT INTO TeacherSubjects (StaffID, ClassYear, SubjectName) VALUES (?, ?, ?)
-            """, (staff_id, year, subject, staff_id, year, staff_id, year, subject))
+        # 2. CLEAR existing mappings to avoid duplicates
+        cursor.execute("DELETE FROM TeacherSubjects WHERE StaffID = ?", (staff_id,))
 
+        # 3. REGISTER all subjects from the frontend into the mapping table
+        for item in mappings:
+            # item['year'] and item['subject'] come from the .t-year and .t-subj inputs
+            cursor.execute("""
+                INSERT INTO TeacherSubjects (StaffID, ClassYear, SubjectName) 
+                VALUES (?, ?, ?)
+            """, (staff_id, item['year'], item['subject']))
+        
         conn.commit()
-        conn.close()
-        return jsonify({"status": "success", "message": f"Updated {len(mappings)} assignments for {name}!"})
+        return jsonify({"status": "success", "message": "Teacher registered and subjects mapped!"})
     except Exception as e:
-        conn.close()
         return jsonify({"status": "error", "message": str(e)})
+    finally:
+        conn.close()
     
 @app.route('/admin_panel')
 @login_required(role="Admin")
 def admin_panel():
     conn = get_db_connection()
     cursor = conn.cursor()
-    # Fetch all users so you can manage their roles in the table
-    cursor.execute("SELECT StudentID, StudentName, Role FROM Students")
-    users = cursor.fetchall()
+    
+    # 1. Fetch Teacher Names for the Timetable dropdown
+    cursor.execute("SELECT TeacherName FROM Teachers")
+    teachers = [row[0] for row in cursor.fetchall()]
+    
+    # 2. Fetch Name + ID for the new Teacher Management table
+    cursor.execute("SELECT TeacherName, StaffID FROM Teachers")
+    teacher_list = cursor.fetchall()
+    
     conn.close()
-    return render_template('admin_panel.html', users=users)
+    # Pass both lists to the template
+    return render_template('admin_panel.html', teachers=teachers, teacher_list=teacher_list)
+
+@app.route('/admin/delete_teacher/<staff_id>', methods=['DELETE'])
+@login_required(role="Admin")
+def delete_teacher(staff_id):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        # Delete mappings first to avoid foreign key errors, then delete the teacher
+        cursor.execute("DELETE FROM TeacherSubjects WHERE StaffID = ?", (staff_id,))
+        cursor.execute("DELETE FROM Teachers WHERE StaffID = ?", (staff_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "success", "message": "Teacher deleted successfully!"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
 
 @app.route('/api/student_count/<subject>')
 def get_student_count(subject):
@@ -708,6 +773,93 @@ def update_timetable():
         return jsonify({"status": "success", "message": "Update successful!"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})    
+    
+@app.route('/teacher/dashboard')
+@login_required(role="Teacher")
+def teacher_dashboard():
+    teacher_id = session.get('student_id')
+    teacher_name = session.get('student_name')
+    class_year = session.get('selected_class')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # 1. Subject for current session cards
+    cursor.execute("SELECT SubjectName FROM TeacherSubjects WHERE StaffID = ? AND ClassYear = ?", (teacher_id, class_year))
+    subj_row = cursor.fetchone()
+    subject = subj_row[0] if subj_row else 'General'
+
+    # 2. Fetch full schedule with Day-Wise Sorting
+    # We use CASE to force the database to follow the Monday-Saturday sequence
+    cursor.execute("""
+        SELECT DayOfWeek, StartTime, SubjectName, ClassYear 
+        FROM Timetable 
+        WHERE LecturerName LIKE ?
+        ORDER BY CASE 
+            WHEN DayOfWeek = 'Monday' THEN 1
+            WHEN DayOfWeek = 'Tuesday' THEN 2
+            WHEN DayOfWeek = 'Wednesday' THEN 3
+            WHEN DayOfWeek = 'Thursday' THEN 4
+            WHEN DayOfWeek = 'Friday' THEN 5
+            WHEN DayOfWeek = 'Saturday' THEN 6
+            ELSE 7 END, 
+        StartTime ASC
+    """, (f"%{teacher_name}%",))
+    
+    raw_schedule = cursor.fetchall()
+    conn.close()
+
+    # Labels for the frontend display
+    days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    time_slots = ['11:00 AM - 12:00 PM', '12:00 PM - 01:00 PM', '01:00 PM - 02:00 PM', '02:00 PM - 03:00 PM']
+
+    return render_template('teacher_dashboard.html', 
+                           subject=subject, 
+                           raw_schedule=raw_schedule,
+                           days=days, 
+                           time_slots=time_slots)
+
+@app.route('/admin/clear_timetable/<year>', methods=['DELETE'])
+@login_required(role="Admin")
+def clear_timetable(year):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Deletes all lectures matching the specific year (e.g., '1st Year')
+        cursor.execute("DELETE FROM Timetable WHERE ClassYear = ?", (year,))
+        
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "success", "message": f"All lectures for {year} have been cleared."})
+    except Exception as e:
+        if conn: conn.close()
+        return jsonify({"status": "error", "message": str(e)})
+    
+@app.route('/api/get_teacher_subjects/<staff_name>/<class_year>')
+@login_required(role="Admin")
+def get_teacher_subjects(staff_name, class_year):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # 1. Get the StaffID for the selected teacher name
+    cursor.execute("SELECT StaffID FROM Teachers WHERE TeacherName = ?", (staff_name,))
+    teacher = cursor.fetchone()
+    
+    if not teacher:
+        conn.close()
+        return jsonify([])
+
+    # 2. Get subjects filtered by BOTH StaffID and the specific ClassYear
+    cursor.execute("""
+        SELECT DISTINCT SubjectName 
+        FROM TeacherSubjects 
+        WHERE StaffID = ? AND ClassYear = ?
+    """, (teacher[0], class_year))
+    
+    subjects = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    return jsonify(subjects)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

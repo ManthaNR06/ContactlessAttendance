@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teacher Dashboard - Smart Attendance</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/all.min.css">
+    <style>
+        body {
+            background-color: #1a252f;
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .dashboard-container {
+            max-width: 950px;
+            margin: 60px auto;
+        }
+        .header-section {
+            background-color: #2c3e50;
+            padding: 30px;
+            border-radius: 15px;
+            border-bottom: 4px solid #3498db;
+            text-align: center;
+        }
+        .card-custom {
+            background-color: #2c3e50;
+            border: none;
+            border-radius: 15px;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            height: 100%;
+            color: #ffffff !important;
+        }
+        .card-custom h3 { color: #ffffff; font-weight: bold; }
+        .card-custom p.text-secondary { color: #ecf0f1 !important; }
+        .card-custom:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+        }
+        .icon-box { font-size: 3rem; margin-bottom: 20px; color: #3498db; }
+        .btn-action {
+            width: 100%;
+            padding: 12px;
+            font-weight: bold;
+            border-radius: 8px;
+            text-transform: uppercase;
+            text-decoration: none;
+            display: inline-block;
+            border: none;
+        }
+        .btn-qr { background-color: #3498db; color: white; }
+        .btn-qr:hover { background-color: #2980b9; color: white; }
+        .btn-report { background-color: #1abc9c; color: white; }
+        .btn-report:hover { background-color: #16a085; color: white; }
+        .btn-year-schedule { background-color: #f1c40f; color: #2c3e50; }
+        .btn-year-schedule:hover { background-color: #d4ac0d; color: #2c3e50; }
+        
+        /* Position the button in the top-right corner of the container */
+/* Clean Top-Right corner within the header */
+/* Standardized styling for the modal switching button */
+.btn-view-schedule {
+    background-color: #f1c40f;
+    color: #2c3e50;
+    width: 100%; /* Full width within the modal for emphasis */
+    padding: 10px;
+    font-weight: bold;
+    border-radius: 8px;
+    border: none;
+    text-transform: uppercase;
+    font-size: 0.85rem;
+    transition: 0.3s;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.btn-view-schedule:hover {
+    background-color: #d4ac0d;
+}
+
+        .footer-link {
+            text-decoration: none;
+            color: #ffffff;
+            margin-top: 20px;
+            display: inline-block;
+            padding: 10px 20px;
+            border: 1px solid #e74c3c;
+            border-radius: 5px;
+            transition: 0.3s;
+        }
+        .footer-link:hover { background-color: #e74c3c; color: white; }
+
+        .matrix-cell { min-height: 80px; background-color: white; vertical-align: middle; }
+        .lecture-pill {
+            background-color: #007bff;
+            color: white;
+            padding: 8px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            margin: 2px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container dashboard-container">
+   <div class="header-section shadow mb-4" style="position: relative;">
+    <h1 class="display-5 fw-bold">Teacher Control Panel</h1>
+    <p class="lead mb-0">Welcome, <strong>{{ session['student_name'] }}</strong></p>
+    <span class="badge bg-info mt-2">Current Session Class: {{ session['selected_class'] }}</span>
+    
+    
+</div>
+
+    <div class="row g-4 mt-2">
+        <div class="col-md-4">
+            <div class="card card-custom p-4 text-center shadow">
+                <div class="icon-box"><i class="fas fa-qrcode"></i></div>
+                <h3>Start Session</h3>
+                <p class="text-secondary">Begin live attendance for <strong>{{ subject }}</strong>.</p>
+                <a href="{{ url_for('qr_display', subject=subject) }}" class="btn btn-action btn-qr">Start QR</a>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card card-custom p-4 text-center shadow">
+                <div class="icon-box"><i class="fas fa-chart-line"></i></div>
+                <h3>View Reports</h3>
+                <p class="text-secondary">Analyze history for <strong>{{ subject }}</strong>.</p>
+                <a href="{{ url_for('report_page') }}" class="btn btn-action btn-report">Open Reports</a>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card card-custom p-4 text-center shadow">
+                <div class="icon-box" style="color: #f1c40f;"><i class="fas fa-calendar-alt"></i></div>
+                <h3>Schedule</h3>
+                <p class="text-secondary">Weekly schedule for <strong>{{ session['selected_class'] }}</strong>.</p>
+                <div class="mt-auto">
+                    <button type="button" class="btn btn-action btn-year-schedule shadow-sm" data-bs-toggle="modal" data-bs-target="#yearScheduleModal">
+                        View Schedule
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="text-center mt-4">
+        <a href="{{ url_for('logout') }}" class="footer-link">
+            <i class="fas fa-sign-out-alt"></i> Logout & Return to Home
+        </a>
+    </div>
+</div>
+
+<div class="modal fade" id="yearScheduleModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content bg-dark text-white">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">Weekly Schedule: {{ session['selected_class'] }}</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="table-responsive mb-4">
+                    <table class="table table-dark table-striped mb-0">
+                        <thead>
+                            <tr>
+                                <th>Day</th>
+                                <th>Time</th>
+                                <th>Subject</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% set current_year = session['selected_class'] %}
+                            {% for row in raw_schedule %}
+                                {% if row[3] == current_year %}
+                                <tr>
+                                    <td><strong>{{ row[0] }}</strong></td> <td>{{ row[1] }}</td> <td>{{ row[2] }}</td> </tr>
+                                {% endif %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="text-center mt-3 pt-3 border-top border-secondary">
+                    <p class="text-secondary small">Need to see all years in a grid?</p>
+                    
+                    <button type="button" class="btn btn-view-schedule shadow-sm" 
+                            data-bs-toggle="modal" data-bs-target="#matrixModal">
+                        <i class="fas fa-table me-2"></i> View all Weekly Schedule
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="matrixModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content bg-light text-dark">
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title">Weekly Schedule</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="table-responsive">
+                    <table class="table table-bordered align-middle text-center shadow-sm">
+                        <thead class="table-dark">
+                            <tr>
+                                <th style="width: 15%;">Time Slot</th>
+                                {% for day in days %} <th>{{ day }}</th> {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for time in time_slots %}
+                            <tr>
+                                <td class="fw-bold bg-secondary text-white">{{ time }}</td>
+                                {% for day in days %}
+                                    <td class="matrix-cell">
+                                        {% for item in raw_schedule %}
+                                            {% if item[0] == day and item[1] == time %}
+                                                <div class="lecture-pill">
+                                                    <strong>{{ item[2] }}</strong><br>
+                                                    <small>({{ item[3] }})</small>
+                                                </div>
+                                            {% endif %}
+                                        {% endfor %}
+                                    </td>
+                                {% endfor %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

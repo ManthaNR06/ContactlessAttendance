@@ -72,7 +72,42 @@
             </div>
         </div>
     </div>
-
+<div class="card shadow-sm mb-5 border-0 rounded-4">
+    <div class="card-header bg-secondary text-white py-3">
+        <h5 class="mb-0">Registered Teachers Management</h5>
+    </div>
+    <div class="card-body p-4">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Name</th>
+                        <th>Staff ID</th>
+                        <th class="text-center">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for name, staff_id in teacher_list %}
+                    <tr>
+                        <td><strong>{{ name }}</strong></td>
+                        <td><code>{{ staff_id }}</code></td>
+                        <td class="text-center">
+                            <button class="btn btn-outline-danger btn-sm" onclick="deleteTeacher('{{ staff_id }}')">
+                                <i class="fas fa-trash-alt"></i> Delete Teacher
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not teacher_list %}
+                    <tr>
+                        <td colspan="3" class="text-center text-muted">No teachers registered yet.</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
     <div class="card shadow-sm mb-5 border-0 rounded-4">
         <div class="card-header bg-dark text-white py-3">
             <h5 class="mb-0">College Timetable Manager</h5>
@@ -101,10 +136,17 @@
         </select>
     </div>
     <div class="col-md-2">
-        <input type="text" id="tt-subject" class="form-control" placeholder="Subject">
+        <select id="tt-subject" class="form-select">
+    <option value="" disabled selected>Select Subject</option>
+</select>
     </div>
     <div class="col-md-2">
-        <input type="text" id="tt-lecturer" class="form-control" placeholder="Lecturer">
+        <select id="tt-lecturer" class="form-select">
+    <option value="" disabled selected>Select Teacher</option>
+    {% for teacher in teachers %}
+        <option value="{{ teacher }}">{{ teacher }}</option>
+    {% endfor %}
+</select>
     </div>
     <div class="col-md-2">
         <div class="form-check">
@@ -123,38 +165,6 @@
         <div class="text-center text-muted p-5 bg-white rounded-4 shadow-sm mb-5">
             Loading timetable data...
         </div>
-    </div>
-
-    <div class="table-container mb-5">
-        <h4 class="mb-4 fw-bold text-secondary">User Authority Management</h4>
-        <table class="table table-hover align-middle">
-            <thead class="table-dark">
-                <tr>
-                    <th>PRN / ID</th><th>Name</th><th>Current Role</th><th>Action</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for user in users %}
-                <tr>
-                    <td><code>{{ user[0] }}</code></td>
-                    <td>{{ user[1] }}</td>
-                    <td>
-                        <span class="badge {% if user[2] == 'Admin' %}bg-danger{% elif user[2] == 'Teacher' %}bg-primary{% elif user[2] == 'Student' %}bg-info{% else %}badge-none{% endif %}">
-                            {{ user[2] if user[2] else 'None' }}
-                        </span>
-                    </td>
-                    <td>
-                        <select class="form-select form-select-sm d-inline-block w-auto" onchange="changeRole('{{ user[0] }}', this.value)">
-                            <option value="">Promote/Demote...</option>
-                            <option value="Student">Student</option>
-                            <option value="Teacher">Teacher</option>
-                            <option value="Admin">Admin</option>
-                        </select>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
     </div>
 </div>
 
@@ -215,21 +225,6 @@ function onboardTeacher() {
     });
 }
 
-// --- AUTHORITY LOGIC ---
-function changeRole(prn, newRole) {
-    if(!newRole) return;
-    fetch('/admin/update_role', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ prn: prn.toString(), role: newRole })
-    })
-    .then(res => res.json())
-    .then(data => {
-        alert(data.message);
-        location.reload();
-    });
-}
-
 // --- TIMETABLE LOGIC ---
 function saveLecture() {
     const isFullWeek = document.getElementById('copy-all-days').checked;
@@ -237,6 +232,7 @@ function saveLecture() {
         ? ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] 
         : [document.getElementById('tt-day').value];
 
+    // Capturing values from the form, including the new Lecturer dropdown
     const basePayload = {
         year: document.getElementById('tt-year').value,
         time: document.getElementById('tt-time').value,
@@ -244,12 +240,18 @@ function saveLecture() {
         lecturer: document.getElementById('tt-lecturer').value
     };
 
-    if (!basePayload.subject || !basePayload.lecturer) {
-        alert("Please fill in both Subject and Lecturer name.");
+    // Updated Validation: Ensures Subject is typed and a Lecturer is selected from the dropdown
+    if (!basePayload.subject) {
+        alert("Please enter a Subject name.");
+        return;
+    }
+    
+    if (!basePayload.lecturer || basePayload.lecturer === "") {
+        alert("Error: You must select a registered teacher from the dropdown list.");
         return;
     }
 
-    // Process all selected days
+    // Process all selected days via the API
     const requests = days.map(day => {
         return fetch('/admin/save_timetable', {
             method: 'POST',
@@ -266,6 +268,10 @@ function saveLecture() {
                 alert("Some entries failed: " + errorMsg);
             } else {
                 alert(isFullWeek ? "Full week scheduled!" : "Entry Saved!");
+                
+                // Clear the subject and reset lecturer selection for next entry
+                document.getElementById('tt-subject').value = "";
+                document.getElementById('tt-lecturer').selectedIndex = 0;
             }
             loadTimetable(); // Refresh the grid
         })
@@ -297,10 +303,13 @@ function loadTimetable() {
                 const section = document.createElement('div');
                 section.className = 'mb-5';
                 
-                // Matrix HTML Structure
+                // Matrix HTML Structure with added "Clear Schedule" button
                 let tableHtml = `
-                    <div class="year-header">
+                    <div class="year-header d-flex justify-content-between align-items-center">
                         <h4 class="fw-bold text-dark mb-1">${year}</h4>
+                        <button onclick="clearYearTimetable('${year}')" class="btn btn-outline-danger btn-sm shadow-sm">
+                            <i class="fas fa-trash-alt me-1"></i> Clear ${year} Schedule
+                        </button>
                     </div>
                     <div class="table-responsive rounded-4 shadow-sm bg-white p-3">
                         <table class="table table-bordered table-hover align-middle mb-0">
@@ -351,6 +360,22 @@ function loadTimetable() {
         });
 }
 
+// Helper function to handle the Clear Year request
+function clearYearTimetable(year) {
+    if (!confirm(`Are you sure you want to delete the ENTIRE schedule for ${year}? This cannot be undone.`)) return;
+
+    fetch(`/admin/clear_timetable/${year}`, { method: 'DELETE' })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === "success") {
+                alert(data.message);
+                loadTimetable(); // Refresh the grid
+            } else {
+                alert("Error: " + data.message);
+            }
+        })
+        .catch(err => console.error("Clear failed:", err));
+}
 function deleteLecture(id) {
     if (!confirm("Remove this lecture?")) return;
     fetch(`/admin/delete_lecture/${id}`, { method: 'DELETE' })
@@ -361,6 +386,112 @@ function deleteLecture(id) {
 }
 
 document.addEventListener('DOMContentLoaded', loadTimetable);
+
+function deleteTeacher(staffId) {
+    if (!confirm("Warning: Deleting this teacher will also remove all their subject assignments. Continue?")) return;
+
+    fetch(`/admin/delete_teacher/${staffId}`, {
+        method: 'DELETE',
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.status === "success") {
+            alert(data.message);
+            location.reload(); // Refresh to update the table and timetable dropdowns
+        } else {
+            alert("Error: " + data.message);
+        }
+    })
+    .catch(err => console.error("Delete failed:", err));
+}
+
+function clearYearTimetable(year) {
+    // Critical safety check to prevent accidental wipes
+    const confirmation = confirm(`WARNING: This will permanently delete EVERY lecture entry for ${year}. This action cannot be undone. Are you sure?`);
+    
+    if (!confirmation) return;
+
+    fetch(`/admin/clear_timetable/${year}`, { method: 'DELETE' })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === "success") {
+                alert(data.message);
+                loadTimetable(); // Refresh the grid
+            } else {
+                alert("Error: " + data.message);
+            }
+        })
+        .catch(err => console.error("Clear failed:", err));
+}
+
+document.getElementById('tt-lecturer').addEventListener('change', function() {
+    const teacherName = this.value;
+    const classYear = document.getElementById('tt-year').value; // Get the selected year
+    const subjectDropdown = document.getElementById('tt-subject');
+    
+    subjectDropdown.innerHTML = '<option value="" disabled selected>Loading...</option>';
+
+    if (!teacherName || !classYear) return;
+
+    // Updated API call to include classYear
+    fetch(`/api/get_teacher_subjects/${encodeURIComponent(teacherName)}/${encodeURIComponent(classYear)}`)
+        .then(res => res.json())
+        .then(subjects => {
+            subjectDropdown.innerHTML = '<option value="" disabled selected>Select Subject</option>';
+            subjects.forEach(subj => {
+                const option = document.createElement('option');
+                option.value = subj;
+                option.textContent = subj;
+                subjectDropdown.appendChild(option);
+            });
+            
+            if (subjects.length === 0) {
+                subjectDropdown.innerHTML = '<option value="" disabled>No subjects for this year</option>';
+            }
+        })
+        .catch(err => {
+            console.error("Error fetching subjects:", err);
+            subjectDropdown.innerHTML = '<option value="" disabled>Error loading subjects</option>';
+        });
+});
+
+// This ensures the timetable loads when the page opens
+document.addEventListener('DOMContentLoaded', loadTimetable);
+
+document.getElementById('tt-year').addEventListener('change', function() {
+    // Reset selection to force the Admin to re-pick the teacher and fetch correct subjects
+    document.getElementById('tt-lecturer').selectedIndex = 0;
+    document.getElementById('tt-subject').innerHTML = '<option value="" disabled selected>Select Subject</option>';
+});
+
+// Add this to refresh subjects whenever the Year is changed
+document.getElementById('tt-year').addEventListener('change', function() {
+    const teacherName = document.getElementById('tt-lecturer').value;
+    const classYear = this.value;
+    const subjectDropdown = document.getElementById('tt-subject');
+
+    // If a teacher is already selected, re-fetch their subjects for the NEW year
+    if (teacherName && teacherName !== "") {
+        fetch(`/api/get_teacher_subjects/${encodeURIComponent(teacherName)}/${encodeURIComponent(classYear)}`)
+            .then(res => res.json())
+            .then(subjects => {
+                subjectDropdown.innerHTML = '<option value="" disabled selected>Select Subject</option>';
+                subjects.forEach(subj => {
+                    const option = document.createElement('option');
+                    option.value = subj;
+                    option.textContent = subj;
+                    subjectDropdown.appendChild(option);
+                });
+                if (subjects.length === 0) {
+                    subjectDropdown.innerHTML = '<option value="" disabled>No subjects for this year</option>';
+                }
+            });
+    } else {
+        // Otherwise, reset the subject dropdown until a teacher is picked
+        subjectDropdown.innerHTML = '<option value="" disabled selected>Select Subject</option>';
+    }
+});
+
 </script>
 </script>
 
