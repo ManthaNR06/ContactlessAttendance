@@ -267,9 +267,9 @@ def verify_attendance():
         return jsonify({"status": "error", "message": f"Face Engine Error: {str(e)}"})
 
     # Geofencing Logic
-    class_lat, class_lon = 19.182159589817456, 72.8400043165067
+    class_lat, class_lon = 19.197831564180618, 72.82618728310584
     distance = calculate_distance(lat, lon, class_lat, class_lon)
-    status = "Present" if distance <= 200 else "Too Far"
+    status = "Present" if distance <= 100 else "Too Far"
     
     try:
         # 3. DUPLICATE CHECK
@@ -860,6 +860,24 @@ def get_teacher_subjects(staff_name, class_year):
     subjects = [row[0] for row in cursor.fetchall()]
     conn.close()
     return jsonify(subjects)
+
+@app.route('/api/contact', methods=['POST'])
+def contact_us():
+    try:
+        data = request.json
+        name = data.get('name')
+        email = data.get('email')
+        msg = data.get('message')
+
+        # This prints the message to your VS Code / Terminal console
+        print(f"\n--- NEW INQUIRY RECEIVED ---")
+        print(f"From: {name} ({email})")
+        print(f"Message: {msg}")
+        print(f"----------------------------\n")
+
+        return jsonify({"status": "success", "message": "Message sent successfully!"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

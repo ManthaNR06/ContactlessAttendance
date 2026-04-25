@@ -3,205 +3,308 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Attendance | Home</title>
+    <title>Contactless Attendance - Smart System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
         :root {
-            --bg-dark: #0f172a; 
-            --accent-blue: #38bdf8;
-            --accent-green: #4ade80;
-            --glass-card: rgba(30, 41, 59, 0.7);
+            --bg-deep: #0f172a;
+            --card-glass: rgba(30, 41, 59, 0.7);
             --border-glow: rgba(255, 255, 255, 0.1);
+            --primary-accent: #38bdf8;
         }
 
         body {
+            background-color: var(--bg-deep);
+            color: #f8fafc;
+            font-family: 'Inter', 'Segoe UI', sans-serif;
             margin: 0;
-            padding: 0;
-            font-family: 'Inter', sans-serif;
-            background-color: var(--bg-dark);
-            background-image: radial-gradient(circle at top right, #1e293b, #0f172a);
-            min-height: 100vh;
-            color: white;
             display: flex;
             flex-direction: column;
-            overflow-x: hidden;
+            min-height: 100vh;
         }
 
-        /* Scaled down Navbar */
         .navbar {
-            background: rgba(15, 23, 42, 0.8) !important;
-            backdrop-filter: blur(12px);
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(10px);
             border-bottom: 1px solid var(--border-glow);
-            padding: 12px 0;
         }
 
-        .navbar-brand {
-            font-weight: 700;
-            font-size: 1.1rem;
-            color: var(--accent-blue) !important;
-        }
+        .navbar-brand { font-weight: 800; letter-spacing: 1px; color: var(--primary-accent) !important; }
 
-        /* Hero Section Styling */
         .hero-section {
             flex: 1;
             display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 40px 20px;
-        }
-
-        h1.display-3 {
-            font-size: 3.2rem;
-            font-weight: 800;
-            background: linear-gradient(to bottom right, #fff 30%, rgba(255,255,255,0.5));
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 0.75rem;
-        }
-
-        .hero-subtitle {
-            color: #94a3b8;
-            font-size: 1.05rem;
-            max-width: 500px;
-            margin: 0 auto 3rem auto;
-        }
-
-        /* Portal Cards */
-        .card-portal {
-            background: var(--glass-card);
-            backdrop-filter: blur(20px);
-            border: 1px solid var(--border-glow);
-            border-radius: 20px;
-            padding: 2.5rem 1.5rem;
-            transition: all 0.3s ease;
-            text-decoration: none;
-            color: white !important;
-            height: 100%;
-            display: flex;
             flex-direction: column;
+            justify-content: center;
             align-items: center;
+            padding-top: 80px;
         }
+
+        .card-portal {
+    background: var(--card-glass);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border-glow);
+    border-radius: 24px;
+    padding: 40px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    /* ADD THIS LINE FOR SMOOTHNESS */
+    transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+}
 
         .card-portal:hover {
-            transform: translateY(-8px);
-            border-color: var(--accent-blue);
-        }
+    transform: translateY(-12px);
+    border-color: var(--primary-accent);   
+    box-shadow: 0 20px 50px rgba(56, 189, 248, 0.15); 
+}
 
-        /* STRENGTHENED Icon Wrapper for visibility */
-        .icon-wrapper {
-            width: 65px;
-            height: 65px;
-            background: #1e293b;
-            border-radius: 16px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            margin-bottom: 1.5rem;
-            border: 1px solid var(--border-glow);
-            transition: 0.3s;
-        }
-
-        /* Force icons to be visible white and large */
-        .icon-wrapper i {
-            color: #ffffff !important;
-            font-size: 1.8rem !important;
-            visibility: visible !important;
-            display: block !important;
-        }
-
-        /* Hover interaction */
-        .card-portal:hover .icon-wrapper {
-            background: white !important;
-        }
-
-        .card-portal:hover .icon-wrapper i {
-            color: var(--bg-dark) !important;
-        }
-
-        .card-title {
-            font-size: 1.3rem;
-            font-weight: 700;
-            margin-bottom: 0.8rem;
-        }
-
-        .card-desc {
-            color: #94a3b8;
-            font-size: 0.85rem;
-            line-height: 1.5;
+        .icon-box {
+            font-size: 2.5rem;
+            color: var(--primary-accent);
+            margin-bottom: 20px;
         }
 
         .btn-portal {
-    margin-top: 1.5rem;
-    padding: 8px 24px;
-    border-radius: 100px;
-    border: 1px solid var(--accent-blue);
-    color: var(--accent-blue);
+    background: transparent;
+    border: 1px solid var(--primary-accent); /* Blue border */
+    color: var(--primary-accent); /* Blue text */
+    padding: 10px 25px;
+    border-radius: 50px;
+    font-weight: 600;
     text-transform: uppercase;
-    font-size: 0.7rem;
-    font-weight: 700;
-    letter-spacing: 0.5px;
+    font-size: 0.8rem;
     transition: 0.3s;
-    background: transparent; /* Ensure it starts transparent */
 }
 
-        .card-portal:hover .btn-portal {
-    background: var(--accent-blue) !important;
-    color: #0f172a !important; /* Force text to Midnight Dark for contrast */
-    border-color: var(--accent-blue) !important;
+       .btn-portal:hover {
+    background: var(--primary-accent);
+    color: #0f172a; /* Dark background on hover */
 }
 
-        @media (max-width: 768px) {
-            h1.display-3 { font-size: 2.2rem; }
-            .hero-section { padding-top: 100px; }
+        /* Modal Customization */
+        .modal-content {
+            background: var(--bg-deep);
+            border: 1px solid var(--border-glow);
+            border-radius: 24px;
         }
+
+        .icon-wrapper {
+            width: 60px;
+            height: 60px;
+            background: rgba(56, 189, 248, 0.1);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 15px;
+        }
+
+        /* Custom styling for Modal Inputs */
+.modal-body .form-control {
+    background-color: #1e293b; /* Darker background for inputs */
+    border: 1px solid #3d4f6a; /* Subtle border */
+    color: white; /* White text for typing */
+    border-radius: 10px;
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+}
+
+/* Fix Placeholder Visibility */
+.modal-body .form-control::placeholder {
+    color: #94a3b8; /* Light gray for placeholders */
+    opacity: 1;
+}
+
+/* Glow effect on focus */
+.modal-body .form-control:focus {
+    background-color: #24334a;
+    border-color: var(--primary-accent);
+    box-shadow: 0 0 0 0.25rem rgba(56, 189, 248, 0.25);
+    color: white;
+}
+
+/* The missing "SEND MESSAGE" button style */
+.btn-send {
+    background-color: var(--primary-accent);
+    color: #0f172a;
+    font-weight: 800;
+    border: none;
+    border-radius: 50px; /* Rounded pill shape */
+    padding: 0.8rem;
+    width: 100%;
+    text-transform: uppercase;
+    transition: 0.3s ease;
+}
+
+.btn-send:hover {
+    background-color: #7dd3fc; /* Lighter blue on hover */
+    transform: scale(1.02);
+}
+
+        footer {
+            border-top: 1px solid var(--border-glow);
+            background: rgba(15, 23, 42, 0.95);
+        }
+
+.icon-box i {
+    transition: color 0.4s ease, transform 0.4s ease;
+}
+
+.card-portal:hover .icon-box i {
+    transform: scale(1.1); /* Subtle grow effect for the icon */
+}
+
     </style>
 </head>
 <body>
 
 <nav class="navbar navbar-expand-lg fixed-top">
-  <div class="container">
-    <a class="navbar-brand" href="/"><i class="fas fa-shield-alt me-2"></i>SMART ATTENDANCE</a>
-    <div class="ms-auto">
-      <a href="/login_teacher" class="text-decoration-none text-white-50 small me-4">Teacher Portal</a>
-      <a href="/login_student" class="text-decoration-none text-white-50 small">Student Login</a>
+    <div class="container">
+        <a class="navbar-brand" href="/"><i class="fas fa-shield-alt me-2"></i>SMART ATTENDANCE</a>
+        <div class="ms-auto d-flex align-items-center">
+            <a href="#" class="text-decoration-none text-white-50 small me-4" data-bs-toggle="modal" data-bs-target="#howItWorksModal">How it Works</a>
+            <a href="#" class="text-decoration-none text-white-50 small me-4" data-bs-toggle="modal" data-bs-target="#contactModal">Contact Us</a>
+            <a href="/login_teacher" class="text-decoration-none text-white-50 small me-4">Teacher Portal</a>
+            <a href="/login_student" class="text-decoration-none text-white-50 small">Student Login</a>
+        </div>
     </div>
-  </div>
 </nav>
 
-<div class="hero-section">
-    <div class="container text-center">
-        <h1 class="display-3">Contactless Attendance</h1>
-        <p class="hero-subtitle">Next-gen secure, location-verified attendance management.</p>
-        
-        <div class="row justify-content-center g-4">
-            <div class="col-md-5 col-lg-4">
-                <a href="/login_teacher" class="card-portal shadow-lg">
-                    <div class="icon-wrapper">
-                        <i class="fas fa-university text-info"></i>
-                    </div>
-                    <h2 class="card-title">Teacher Portal</h2>
-                    <p class="card-desc">Deploy session tokens and manage classroom metrics with ease.</p>
-                    <div class="btn-portal">Enter System</div>
-                </a>
-            </div>
+<div class="hero-section container">
+    <div class="text-center mb-5">
+        <h1 class="display-3 fw-bold">Contactless Attendance</h1>
+        <p class="lead text-white-50">Next-gen secure, location-verified attendance management.</p>
+    </div>
 
-            <div class="col-md-5 col-lg-4">
-                <a href="/login_student" class="card-portal shadow-lg">
-                    <div class="icon-wrapper">
-                        <i class="fas fa-mobile-alt" style="color: var(--accent-green);"></i>
+    <div class="row g-4 w-100 justify-content-center" style="max-width: 900px;">
+        <div class="col-md-6">
+            <div class="card-portal shadow-sm">
+                <div class="icon-box"><i class="fas fa-university"></i></div>
+                <h3 class="fw-bold">Teacher Portal</h3>
+                <p class="text-white-50 mb-4">Generate QR codes and manage classroom sessions.</p>
+                <a href="/login_teacher" class="btn btn-portal">Enter System</a>
+            </div>
+        </div>
+       <div class="col-md-6">
+    <div class="card-portal shadow-sm">
+        <div class="icon-box"><i class="fas fa-mobile-alt"></i></div>
+        <h3 class="fw-bold">Student Portal</h3>
+        <p class="text-white-50 mb-4">Access your attendance stats,percentage & history.</p>
+        <a href="/login_student" class="btn btn-portal">Login Now</a>
+    </div>
+</div>
+    </div>
+</div>
+
+<div class="modal fade" id="howItWorksModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content shadow-lg">
+            <div class="modal-header border-0">
+                <h5 class="modal-title fw-bold text-info"><i class="fas fa-info-circle me-2"></i>System Architecture</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="row g-4 text-center">
+                    <div class="col-md-4">
+                        <div class="icon-wrapper mx-auto"><i class="fas fa-qrcode text-info"></i></div>
+                        <h6 class="fw-bold">1. Dynamic QR</h6>
+                        <p class="small text-white-50">Scan the live QR code displayed by the teacher.</p>
                     </div>
-                    <h2 class="card-title">Student Portal</h2>
-                    <p class="card-desc">Verify presence using encrypted QR tech and check real-time stats.</p>
-                    <div class="btn-portal" style="border-color: var(--accent-green); color: var(--accent-green);">Login Now</div>
-                </a>
+                    <div class="col-md-4">
+                        <div class="icon-wrapper mx-auto"><i class="fas fa-user-shield text-info"></i></div>
+                        <h6 class="fw-bold">2. Face Match</h6>
+                        <p class="small text-white-50">Biometric engine verifies live identity against registered database.</p>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="icon-wrapper mx-auto"><i class="fas fa-satellite text-info"></i></div>
+                        <h6 class="fw-bold">3. Geofencing</h6>
+                        <p class="small text-white-50">Verification only succeeds within a 200m classroom radius.</p>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
+<div class="modal fade" id="contactModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow-lg">
+            <div class="modal-header border-0">
+                <h5 class="modal-title fw-bold text-info"><i class="fas fa-envelope me-2"></i>Send Message</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <form id="contactForm">
+                    <input type="text" id="c_name" class="form-control" placeholder="Name" required>
+                    <input type="email" id="c_email" class="form-control" placeholder="Email Address" required>
+                    <textarea id="c_msg" class="form-control" rows="4" placeholder="Message" required></textarea>
+                    
+                    <button type="button" class="btn-send" id="sendBtn" onclick="submitContact()">SEND MESSAGE</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<footer class="py-4 text-center mt-auto">
+    <div class="container">
+        <p class="small text-white-50 mb-0">© 2026 Smart Attendance System. Built for Security.</p>
+    </div>
+</footer>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+function submitContact() {
+    const btn = document.getElementById('sendBtn');
+    const name = document.getElementById('c_name').value;
+    const email = document.getElementById('c_email').value;
+    const message = document.getElementById('c_msg').value;
+
+    // Basic Validation
+    if (!name || !email || !message) {
+        alert("Please fill all fields!");
+        return;
+    }
+
+    // UI Feedback
+    btn.innerText = "Processing...";
+    btn.disabled = true;
+
+    fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, message })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.status === 'success') {
+            alert(data.message);
+            document.getElementById('contactForm').reset();
+            
+            // Close Modal
+            const modalElement = document.getElementById('contactModal');
+            const modalInstance = bootstrap.Modal.getInstance(modalElement);
+            modalInstance.hide();
+        } else {
+            alert("Error: " + data.message);
+        }
+    })
+    .catch(err => {
+        console.error("Error:", err);
+        alert("Server Error. Make sure Flask is running.");
+    })
+    .finally(() => {
+        btn.innerText = "SEND MESSAGE";
+        btn.disabled = false;
+    });
+}
+</script>
 </body>
 </html>
