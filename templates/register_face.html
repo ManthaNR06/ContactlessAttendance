@@ -73,6 +73,17 @@
     const statusMsg = document.getElementById('status');
     let finalImageData = null;
 
+    // SHORT DEV-ID HASHING LOGIC
+    function getShortDeviceID() {
+        const rawId = navigator.platform + window.screen.width + "x" + window.screen.height + navigator.hardwareConcurrency;
+        let hash = 0;
+        for (let i = 0; i < rawId.length; i++) {
+            hash = ((hash << 5) - hash) + rawId.charCodeAt(i);
+            hash |= 0;
+        }
+        return "DEV-" + Math.abs(hash).toString(16).toUpperCase();
+    }
+
     async function initCamera() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
@@ -109,7 +120,7 @@
         const fullName = document.getElementById('fullname').value;
         const prn = document.getElementById('prn').value;
         const rollNo = document.getElementById('rollno').value;
-        const classYear = document.getElementById('class_year').value; // Added
+        const classYear = document.getElementById('class_year').value;
         const password = document.getElementById('pass').value;
 
         if (!fullName || !prn || !rollNo || !classYear || !password || !finalImageData) {
@@ -117,9 +128,7 @@
             return;
         }
 
-        let deviceID = localStorage.getItem('unique_device_id') || 
-                       ('DEV-' + Math.random().toString(36).substr(2, 9).toUpperCase());
-        localStorage.setItem('unique_device_id', deviceID);
+        const deviceID = getShortDeviceID();
 
         statusMsg.innerText = "Saving Account...";
         statusMsg.className = "mt-3 text-primary";
@@ -131,7 +140,7 @@
                 fullname: fullName, 
                 prn: prn, 
                 rollno: rollNo, 
-                class_year: classYear, // Passed to Backend
+                class_year: classYear, 
                 password: password, 
                 image: finalImageData, 
                 device_fingerprint: deviceID 
@@ -148,12 +157,7 @@
                 statusMsg.className = "mt-3 text-danger";
             }
         })
-        .catch(err => {
-            statusMsg.innerText = "Error connecting to server.";
-            statusMsg.className = "mt-3 text-danger";
-        });
     }
-
     window.onload = initCamera;
 </script>
 </body>

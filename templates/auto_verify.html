@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Contactless Face & GPS Verification</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         body { background-color: #f4f7f6; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
         .verify-card { background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; position: relative; }
@@ -62,9 +63,9 @@
     function getGPS() {
         if (navigator.geolocation) {
             const geoOptions = {
-                enableHighAccuracy: true, // Forces phone to use GPS hardware
-                timeout: 10000,           // Wait up to 10 seconds for a satellite lock
-                maximumAge: 0             // Always get fresh coordinates, no cache
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 0
             };
 
             navigator.geolocation.getCurrentPosition(
@@ -73,7 +74,6 @@
                     const accuracy = Math.round(position.coords.accuracy);
                     locationStatus.innerText = `Location Locked (±${accuracy}m)`;
                     locationStatus.className = "status-badge bg-success text-white";
-                    checkReadyStatus();
                 },
                 (error) => {
                     console.error("GPS Error:", error);
@@ -97,8 +97,8 @@
             locationStatus.className = "status-badge bg-primary text-white";
             overlay.style.borderColor = "#0d6efd"; 
             
-            // Auto-capture after 3 seconds of alignment
-            setTimeout(captureAndVerify, 3000);
+            // Auto-capture after brief alignment
+            setTimeout(captureAndVerify, 2000);
         } else {
             setTimeout(checkReadyStatus, 500);
         }
@@ -115,6 +115,15 @@
             msgDiv.className = "mt-3 fw-bold text-danger";
             return;
         }
+
+        // GENERATE SHORT DEV-ID HASH
+        const rawId = navigator.platform + window.screen.width + "x" + window.screen.height + navigator.hardwareConcurrency;
+        let hash = 0;
+        for (let i = 0; i < rawId.length; i++) {
+            hash = ((hash << 5) - hash) + rawId.charCodeAt(i);
+            hash |= 0; 
+        }
+        const currentFingerprint = "DEV-" + Math.abs(hash).toString(16).toUpperCase();
 
         isProcessing = true;
         overlay.style.borderColor = "#198754"; 
@@ -141,7 +150,7 @@
                 latitude: userCoords.lat,
                 longitude: userCoords.lon,
                 image: imageData,            
-                device_fingerprint: localStorage.getItem('unique_device_id')
+                device_fingerprint: currentFingerprint
             })
         })
         .then(response => response.json())
@@ -151,29 +160,41 @@
                 document.getElementById('location-status').style.display = 'none';
                 
                 msgDiv.innerHTML = `
-                    <div class="alert alert-success p-4 rounded-4 shadow-sm">
+                    <div class="alert alert-success p-4 rounded-4 shadow-sm text-center">
                         <h2 class="display-6">✅ Done!</h2>
                         <h4 class="mt-2">Attendance Marked</h4>
-                        <p class="text-muted">Your identity and location have been verified.</p>
-                        <hr>
+                        <p class="text-muted small">${data.message}</p> <hr>
                         <div class="d-grid gap-2">
-                            <a href="{{ url_for('stats_page') }}" class="btn-green">View History & Percentage</a>
-                            <a href="/" class="btn btn-outline-secondary">Return to Home</a>
+                            <a href="{{ url_for('stats_page') }}" class="btn btn-primary rounded-pill shadow-sm">View History</a>
+                            <a href="/" class="btn btn-outline-secondary rounded-pill">Return to Home</a>
                         </div>
                     </div>
                 `;
-                msgDiv.className = "mt-3";
             } else {
-                msgDiv.innerText = "❌ " + data.message;
-                msgDiv.className = "mt-3 fw-bold text-danger";
-                setTimeout(() => { 
-                    isProcessing = false; 
-                    overlay.style.borderColor = "rgba(255, 255, 255, 0.6)";
-                    checkReadyStatus(); 
-                }, 4000);
+                if (data.message.includes("Device not linked")) {
+                    msgDiv.innerHTML = `
+                        <div class="alert alert-warning border-0 shadow-sm p-4 text-center rounded-4">
+                            <i class="fas fa-exclamation-triangle mb-3 d-block fa-2x text-warning"></i>
+                            <h5 class="fw-bold">Security Action</h5>
+                            <p class="small text-muted mb-3">Your device ID was reset. To bind this phone:</p>
+                            <ol class="text-start small mb-3">
+                                <li>Logout from the portal</li>
+                                <li>Login again to link device</li>
+                                <li>Scan this QR again</li>
+                            </ol>
+                            <a href="/logout" class="btn btn-danger btn-sm px-4 rounded-pill">Logout Now</a>
+                        </div>`;
+                } else {
+                    msgDiv.innerText = "❌ " + data.message;
+                    setTimeout(() => { 
+                        isProcessing = false; 
+                        overlay.style.borderColor = "rgba(255, 255, 255, 0.6)";
+                        checkReadyStatus(); 
+                    }, 4000);
+                }
             }
         });
-    }
+    } // FIXED: Missing closing brace for captureAndVerify
 
     window.onload = () => {
         startCamera();

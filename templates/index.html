@@ -167,11 +167,18 @@
 <nav class="navbar navbar-expand-lg fixed-top">
     <div class="container">
         <a class="navbar-brand" href="/"><i class="fas fa-shield-alt me-2"></i>SMART ATTENDANCE</a>
-        <div class="ms-auto d-flex align-items-center">
-            <a href="#" class="text-decoration-none text-white-50 small me-4" data-bs-toggle="modal" data-bs-target="#howItWorksModal">How it Works</a>
-            <a href="#" class="text-decoration-none text-white-50 small me-4" data-bs-toggle="modal" data-bs-target="#contactModal">Contact Us</a>
-            <a href="/login_teacher" class="text-decoration-none text-white-50 small me-4">Teacher Portal</a>
-            <a href="/login_student" class="text-decoration-none text-white-50 small">Student Login</a>
+        
+        <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon" style="filter: invert(1);"></span>
+        </button>
+
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <div class="ms-auto d-flex flex-column flex-lg-row align-items-lg-center">
+                <a href="#" class="nav-link text-white-50 small me-lg-4" data-bs-toggle="modal" data-bs-target="#howItWorksModal">How it Works</a>
+                <a href="#" class="nav-link text-white-50 small me-lg-4" data-bs-toggle="modal" data-bs-target="#contactModal">Contact Us</a>
+                <a href="/login_teacher" class="nav-link text-white-50 small me-lg-4">Teacher Portal</a>
+                <a href="/login_student" class="nav-link text-white-50 small">Student Login</a>
+            </div>
         </div>
     </div>
 </nav>

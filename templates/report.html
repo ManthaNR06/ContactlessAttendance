@@ -4,13 +4,24 @@
     <title>Attendance Report - {{ subject }}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/all.min.css">
     <style>
         body { background-color: #f4f7f6; font-family: 'Segoe UI', sans-serif; }
         .card { border: none; transition: transform 0.2s; }
         .stats-card { background: linear-gradient(45deg, #0d6efd, #0048b3); }
         .percent-card { background: linear-gradient(45deg, #17a2b8, #117a8b); }
-        .export-panel { display: none; }
-        @media print { .btn, .navbar, .export-panel, .input-group { display: none !important; } }
+        .export-panel { display: none; }        
+        .btn-action-custom { 
+            font-size: 0.8rem;
+            padding: 6px 14px;
+            font-weight: 600;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+        @media print { .btn, .navbar, .export-panel, .input-group, .action-col { display: none !important; } }
     </style>
 </head>
 <body>
@@ -72,7 +83,7 @@
             <div class="card stats-card text-white shadow-sm rounded-4 h-100">
                 <div class="card-body p-4 text-center">
                     <h6 class="text-uppercase small fw-bold opacity-75">Present Today</h6>
-                    <h2 class="display-5 fw-bold mb-0" id="present-count">0</h2>
+                    <h2 class="display-5 fw-bold mb-0" id="present-count">0 / 0</h2>
                 </div>
             </div>
         </div>
@@ -96,16 +107,18 @@
     <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-5">
         <div class="card-body p-0">
             <table class="table table-hover align-middle mb-0" id="attendance-table">
-               <thead class="table-dark">
-    <tr>
-        <th>Roll No</th> <th>Student Name</th>
-        <th>Class Year</th>
-        <th>Date</th>
-        <th>Time</th>
-        <th>Status</th>
-        <th>Coordinates</th>
-    </tr>
-</thead>
+                <thead class="table-dark">
+                    <tr>
+                        <th>Roll No</th> 
+                        <th>Student Name</th>
+                        <th>Class Year</th>
+                        <th>Date</th>
+                        <th>Time</th>
+                        <th>Status</th>
+                        <th>Coordinates</th>
+                        <th class="action-col text-center">Action</th>
+                    </tr>
+                </thead>
                 <tbody id="attendance-table-body"></tbody>
             </table>
         </div>
@@ -114,9 +127,6 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-    // Pull the total enrolled from background
-    const TOTAL_ENROLLED = parseInt("{{ total_enrolled }}") || 0;
-
     function formatToDMY(dateStr) {
         if (!dateStr || !dateStr.includes('-')) return dateStr;
         const [y, m, d] = dateStr.split('-');
@@ -128,98 +138,113 @@
         panel.style.display = (panel.style.display === 'block') ? 'none' : 'block';
     }
 
-function fetchLiveUpdates() {
-    fetch('/api/attendance_data').then(res => res.json()).then(data => {
-        // 1. Get Today's Date in raw format for comparison
-        const now = new Date();
-        const todayRaw = now.getFullYear() + '-' + 
-                         String(now.getMonth() + 1).padStart(2, '0') + '-' + 
-                         String(now.getDate()).padStart(2, '0');
-        
-        // Format today's date for display (DD-MM-YYYY)
-        const todayDisplay = formatToDMY(todayRaw);
+    function fetchLiveUpdates() {
+        fetch('/api/attendance_data').then(res => res.json()).then(data => {
+            const now = new Date();
+            const todayRaw = now.getFullYear() + '-' + 
+                             String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+                             String(now.getDate()).padStart(2, '0');
+            const todayDisplay = formatToDMY(todayRaw);
 
-        // 2. Identify who is present TODAY
-        const todayLogs = data.logs.filter(log => log.date === todayRaw);
-        const presentNamesToday = todayLogs.map(log => log.name);
-        
-        // Update Cards
-        const presentCount = [...new Set(presentNamesToday)].length;
-        document.getElementById('present-count').innerText = `${presentCount} / ${data.all_students.length}`;
-        document.getElementById('attendance-percentage').innerText = 
-            (data.all_students.length > 0 ? (presentCount / data.all_students.length * 100).toFixed(1) : 0) + '%';
+            const todayLogs = data.logs.filter(log => log.date === todayRaw);
+            const presentNamesToday = todayLogs.map(log => log.name);
+            
+            const presentCount = [...new Set(presentNamesToday)].length;
+            document.getElementById('present-count').innerText = `${presentCount} / ${data.all_students.length}`;
+            document.getElementById('attendance-percentage').innerText = 
+                (data.all_students.length > 0 ? (presentCount / data.all_students.length * 100).toFixed(1) : 0) + '%';
 
-        // 3. Build the Table Body
-        const tableBody = document.getElementById('attendance-table-body');
-        let html = `<tr class="table-light"><td colspan="7" class="fw-bold text-center py-2">--- Today's Status: ${todayDisplay} ---</td></tr>`;
+            const tableBody = document.getElementById('attendance-table-body');
+            let html = `<tr class="table-light"><td colspan="8" class="fw-bold text-center py-2">--- Today's Status: ${todayDisplay} ---</td></tr>`;
 
-        // Today's list is already sorted by SQL
-        data.all_students.forEach(student => {
-            const log = todayLogs.find(l => l.name === student.name);
-            const isPresent = !!log;
+            data.all_students.forEach(student => {
+                const log = todayLogs.find(l => l.name === student.name);
+                const isPresent = !!log;
 
-            html += `<tr>
-                <td>${student.roll_no}</td> 
-                <td><strong>${student.name}</strong></td>
-                <td>${student.class_year}</td>
-                <td>${todayDisplay}</td> <td>${isPresent ? log.time : '--:--'}</td>
-                <td>
-                    <span class="badge ${isPresent ? 'bg-success' : 'bg-danger'}">
-                        ${isPresent ? 'Present' : 'Absent'}
-                    </span>
-                </td>
-                <td class="text-muted small">${isPresent ? `<code>${log.lat}, ${log.lon}</code>` : 'N/A'}</td>
-            </tr>`;
+                html += `<tr>
+                    <td>${student.roll_no}</td> 
+                    <td><strong>${student.name}</strong></td>
+                    <td>${student.class_year}</td>
+                    <td>${todayDisplay}</td> 
+                    <td>${isPresent ? log.time : '--:--'}</td>
+                    <td>
+                        <span class="badge ${isPresent ? 'bg-success' : 'bg-danger'}">
+                            ${isPresent ? 'Present' : 'Absent'}
+                        </span>
+                    </td>
+                    <td class="text-muted small">${isPresent ? `<code>${log.lat}, ${log.lon}</code>` : 'N/A'}</td>
+                    <td class="action-col">
+                        <div class="d-flex justify-content-center gap-2">
+                            ${!isPresent ? `
+                                <form action="/manual_mark" method="POST" style="display:inline;">
+                                    <input type="hidden" name="student_name" value="${student.name}">
+                                    <button type="submit" class="btn btn-primary btn-action-custom shadow-sm" title="Mark Attendance">
+                                        <i class="fas fa-check-circle"></i> Mark Attendance
+                                    </button>
+                                </form>
+                            ` : `
+                                <form action="/delete_attendance" method="POST" style="display:inline;" 
+                                      onsubmit="return confirm('Remove attendance for ${student.name}?');">
+                                    <input type="hidden" name="student_name" value="${student.name}">
+                                    <button type="submit" class="btn btn-danger btn-action-custom shadow-sm" title="Undo Attendance">
+                                        <i class="fas fa-undo"></i> Undo Attendance
+                                    </button>
+                                </form>
+                            `}
+                            
+                            <form action="/reset_device" method="POST" style="display:inline;" 
+                                  onsubmit="return confirm('Reset device ID for ${student.name}? Student must logout and login again.');">
+                                <input type="hidden" name="student_prn" value="${student.prn}"> 
+                                <button type="submit" class="btn btn-secondary btn-action-custom shadow-sm" title="Reset Device ID">
+                                    <i class="fas fa-mobile-alt"></i> Reset Device ID
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>`;
+            });
+
+            // Historical Data handling remains the same...
+            const pastLogs = data.logs.filter(log => log.date !== todayRaw);
+            pastLogs.sort((a, b) => {
+                const rollA = parseInt(data.all_students.find(s => s.name === a.name)?.roll_no || 0);
+                const rollB = parseInt(data.all_students.find(s => s.name === b.name)?.roll_no || 0);
+                return rollA - rollB;
+            });
+
+            let lastDate = "";
+            pastLogs.forEach(log => {
+                const dmy = formatToDMY(log.date); 
+                if (log.date !== lastDate) {
+                    html += `<tr class="table-light"><td colspan="8" class="fw-bold text-center py-2">--- ${dmy} ---</td></tr>`;
+                    lastDate = log.date;
+                }
+                const rollNo = data.all_students.find(s => s.name === log.name)?.roll_no || 'N/A';
+                html += `<tr>
+                    <td>${rollNo}</td> 
+                    <td>${log.name}</td>
+                    <td>${log.class_year || '{{ year }}'}</td> 
+                    <td>${dmy}</td> <td>${log.time}</td>
+                    <td><span class="badge bg-success">Present</span></td>
+                    <td class="text-muted small"><code>${log.lat}, ${log.lon}</code></td>
+                    <td class="action-col text-center">
+                        <i class="fas fa-check-double text-success"></i>
+                    </td>
+                </tr>`;
+            });
+
+            tableBody.innerHTML = html;
         });
-
-        // 4. Show Historical Data below Today's list
-        const pastLogs = data.logs.filter(log => log.date !== todayRaw);
-
-        // FIX: Sort historical logs by Roll Number (Numerical)
-        pastLogs.sort((a, b) => {
-            const studentA = data.all_students.find(s => s.name === a.name);
-            const studentB = data.all_students.find(s => s.name === b.name);
-            const rollA = studentA ? parseInt(studentA.roll_no) : 0;
-            const rollB = studentB ? parseInt(studentB.roll_no) : 0;
-            return rollA - rollB;
-        });
-
-        let lastDate = "";
-        pastLogs.forEach(log => {
-            const dmy = formatToDMY(log.date); 
-            if (log.date !== lastDate) {
-                html += `<tr class="table-light"><td colspan="7" class="fw-bold text-center py-2">--- ${dmy} ---</td></tr>`;
-                lastDate = log.date;
-            }
-
-            const studentInfo = data.all_students.find(s => s.name === log.name);
-            const rollNo = studentInfo ? studentInfo.roll_no : 'N/A';
-
-            html += `<tr>
-                <td>${rollNo}</td> 
-                <td>${log.name}</td>
-                <td>${log.class_year || '{{ year }}'}</td> 
-                <td>${dmy}</td> <td>${log.time}</td>
-                <td><span class="badge bg-success">Present</span></td>
-                <td class="text-muted small"><code>${log.lat}, ${log.lon}</code></td>
-            </tr>`;
-        });
-
-        tableBody.innerHTML = html;
-    });
-}
+    }
 
     function fetchAndDownload() {
         const start = document.getElementById('startDate').value;
         const end = document.getElementById('endDate').value;
         if(!start || !end) return alert("Please select dates.");
-        fetchLiveUpdates();
-        setTimeout(() => {
-            const table = document.getElementById("attendance-table");
-            const wb = XLSX.utils.table_to_book(table, {sheet: "Attendance"});
-            XLSX.writeFile(wb, `Report_${formatToDMY(start)}_to_${formatToDMY(end)}.xlsx`);
-            toggleExportPanel();
-        }, 600);
+        const table = document.getElementById("attendance-table");
+        const wb = XLSX.utils.table_to_book(table, {sheet: "Attendance"});
+        XLSX.writeFile(wb, `Report_${formatToDMY(start)}_to_${formatToDMY(end)}.xlsx`);
+        toggleExportPanel();
     }
 
     function filterTable() {
@@ -240,7 +265,7 @@ function fetchLiveUpdates() {
     }
 
     document.addEventListener('DOMContentLoaded', fetchLiveUpdates);
-    setInterval(fetchLiveUpdates, 5000);
+    setInterval(fetchLiveUpdates, 10000);
 </script>
 </body>
 </html>
