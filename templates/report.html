@@ -146,10 +146,9 @@
                              String(now.getDate()).padStart(2, '0');
             const todayDisplay = formatToDMY(todayRaw);
 
+            // 1. Update Header Stats
             const todayLogs = data.logs.filter(log => log.date === todayRaw);
-            const presentNamesToday = todayLogs.map(log => log.name);
-            
-            const presentCount = [...new Set(presentNamesToday)].length;
+            const presentCount = [...new Set(todayLogs.map(log => log.name))].length;
             document.getElementById('present-count').innerText = `${presentCount} / ${data.all_students.length}`;
             document.getElementById('attendance-percentage').innerText = 
                 (data.all_students.length > 0 ? (presentCount / data.all_students.length * 100).toFixed(1) : 0) + '%';
@@ -157,6 +156,7 @@
             const tableBody = document.getElementById('attendance-table-body');
             let html = `<tr class="table-light"><td colspan="8" class="fw-bold text-center py-2">--- Today's Status: ${todayDisplay} ---</td></tr>`;
 
+            // 2. Display Today's Full List (Same as before)
             data.all_students.forEach(student => {
                 const log = todayLogs.find(l => l.name === student.name);
                 const isPresent = !!log;
@@ -167,70 +167,49 @@
                     <td>${student.class_year}</td>
                     <td>${todayDisplay}</td> 
                     <td>${isPresent ? log.time : '--:--'}</td>
-                    <td>
-                        <span class="badge ${isPresent ? 'bg-success' : 'bg-danger'}">
-                            ${isPresent ? 'Present' : 'Absent'}
-                        </span>
-                    </td>
+                    <td><span class="badge ${isPresent ? 'bg-success' : 'bg-danger'}">${isPresent ? 'Present' : 'Absent'}</span></td>
                     <td class="text-muted small">${isPresent ? `<code>${log.lat}, ${log.lon}</code>` : 'N/A'}</td>
                     <td class="action-col">
                         <div class="d-flex justify-content-center gap-2">
                             ${!isPresent ? `
-                                <form action="/manual_mark" method="POST" style="display:inline;">
-                                    <input type="hidden" name="student_name" value="${student.name}">
-                                    <button type="submit" class="btn btn-primary btn-action-custom shadow-sm" title="Mark Attendance">
-                                        <i class="fas fa-check-circle"></i> Mark Attendance
-                                    </button>
-                                </form>
+                                <form action="/manual_mark" method="POST"><input type="hidden" name="student_name" value="${student.name}"><button type="submit" class="btn btn-primary btn-action-custom"><i class="fas fa-check-circle"></i> Mark Attendance</button></form>
                             ` : `
-                                <form action="/delete_attendance" method="POST" style="display:inline;" 
-                                      onsubmit="return confirm('Remove attendance for ${student.name}?');">
-                                    <input type="hidden" name="student_name" value="${student.name}">
-                                    <button type="submit" class="btn btn-danger btn-action-custom shadow-sm" title="Undo Attendance">
-                                        <i class="fas fa-undo"></i> Undo Attendance
-                                    </button>
-                                </form>
+                                <form action="/delete_attendance" method="POST"><input type="hidden" name="student_name" value="${student.name}"><button type="submit" class="btn btn-danger btn-action-custom"><i class="fas fa-undo"></i> Undo Attendance</button></form>
                             `}
-                            
-                            <form action="/reset_device" method="POST" style="display:inline;" 
-                                  onsubmit="return confirm('Reset device ID for ${student.name}? Student must logout and login again.');">
-                                <input type="hidden" name="student_prn" value="${student.prn}"> 
-                                <button type="submit" class="btn btn-secondary btn-action-custom shadow-sm" title="Reset Device ID">
-                                    <i class="fas fa-mobile-alt"></i> Reset Device ID
-                                </button>
-                            </form>
+                            <form action="/reset_device" method="POST"><input type="hidden" name="student_prn" value="${student.prn}"><button type="submit" class="btn btn-secondary btn-action-custom"><i class="fas fa-mobile-alt"></i> Reset Device ID</button></form>
                         </div>
                     </td>
                 </tr>`;
             });
 
-            // Historical Data handling remains the same...
+            // 3. Historical Data: Display ALL students for EACH past date
             const pastLogs = data.logs.filter(log => log.date !== todayRaw);
-            pastLogs.sort((a, b) => {
-                const rollA = parseInt(data.all_students.find(s => s.name === a.name)?.roll_no || 0);
-                const rollB = parseInt(data.all_students.find(s => s.name === b.name)?.roll_no || 0);
-                return rollA - rollB;
-            });
+            
+            // Get unique past dates and sort them descending (newest first)
+            const uniqueDates = [...new Set(pastLogs.map(l => l.date))].sort().reverse();
 
-            let lastDate = "";
-            pastLogs.forEach(log => {
-                const dmy = formatToDMY(log.date); 
-                if (log.date !== lastDate) {
-                    html += `<tr class="table-light"><td colspan="8" class="fw-bold text-center py-2">--- ${dmy} ---</td></tr>`;
-                    lastDate = log.date;
-                }
-                const rollNo = data.all_students.find(s => s.name === log.name)?.roll_no || 'N/A';
-                html += `<tr>
-                    <td>${rollNo}</td> 
-                    <td>${log.name}</td>
-                    <td>${log.class_year || '{{ year }}'}</td> 
-                    <td>${dmy}</td> <td>${log.time}</td>
-                    <td><span class="badge bg-success">Present</span></td>
-                    <td class="text-muted small"><code>${log.lat}, ${log.lon}</code></td>
-                    <td class="action-col text-center">
-                        <i class="fas fa-check-double text-success"></i>
-                    </td>
-                </tr>`;
+            uniqueDates.forEach(date => {
+                const dmy = formatToDMY(date);
+                html += `<tr class="table-light"><td colspan="8" class="fw-bold text-center py-2">--- History: ${dmy} ---</td></tr>`;
+
+                // For every date, check every student in the master list
+                data.all_students.forEach(student => {
+                    const log = pastLogs.find(l => l.date === date && l.name === student.name);
+                    const isPresent = !!log;
+
+                    html += `<tr>
+                        <td>${student.roll_no}</td> 
+                        <td>${student.name}</td>
+                        <td>${student.class_year}</td> 
+                        <td>${dmy}</td> 
+                        <td>${isPresent ? log.time : '--:--'}</td>
+                        <td><span class="badge ${isPresent ? 'bg-success' : 'bg-danger'}">${isPresent ? 'Present' : 'Absent'}</span></td>
+                        <td class="text-muted small">${isPresent ? `<code>${log.lat}, ${log.lon}</code>` : 'N/A'}</td>
+                        <td class="action-col text-center">
+                            ${isPresent ? '<i class="fas fa-check-double text-success"></i>' : '<i class="fas fa-times text-danger"></i>'}
+                        </td>
+                    </tr>`;
+                });
             });
 
             tableBody.innerHTML = html;
@@ -238,14 +217,41 @@
     }
 
     function fetchAndDownload() {
-        const start = document.getElementById('startDate').value;
-        const end = document.getElementById('endDate').value;
-        if(!start || !end) return alert("Please select dates.");
-        const table = document.getElementById("attendance-table");
-        const wb = XLSX.utils.table_to_book(table, {sheet: "Attendance"});
-        XLSX.writeFile(wb, `Report_${formatToDMY(start)}_to_${formatToDMY(end)}.xlsx`);
-        toggleExportPanel();
-    }
+    const start = document.getElementById('startDate').value;
+    const end = document.getElementById('endDate').value;
+    if(!start || !end) return alert("Please select dates.");
+
+    // 1. Prepare clean data by cloning the table and removing the Action column
+    const originalTable = document.getElementById("attendance-table");
+    const tempTable = originalTable.cloneNode(true);
+    tempTable.querySelectorAll('.action-col').forEach(col => col.remove());
+
+    // 2. Convert table to a Worksheet
+    const ws = XLSX.utils.table_to_sheet(tempTable);
+
+    // 3. Define the range of the sheet to apply formatting
+    const range = XLSX.utils.decode_range(ws['!ref']);
+
+    // 4. Set Column Widths for better readability
+    ws['!cols'] = [
+        { wch: 8 },  // Roll No
+        { wch: 25 }, // Student Name
+        { wch: 15 }, // Class Year
+        { wch: 15 }, // Date
+        { wch: 12 }, // Time
+        { wch: 10 }, // Status
+        { wch: 30 }  // Coordinates
+    ];
+
+    // 5. Create a new Workbook and append the formatted sheet
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Attendance Report");
+
+    // 6. Final Export
+    XLSX.writeFile(wb, `Report_${formatToDMY(start)}_to_${formatToDMY(end)}.xlsx`);
+    
+    toggleExportPanel();
+}
 
     function filterTable() {
         const q = document.getElementById("studentSearch").value.toUpperCase();
