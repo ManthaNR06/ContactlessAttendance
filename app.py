@@ -9,7 +9,7 @@ import math
 import pyodbc
 import qrcode
 from functools import wraps # Added for the decorator
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
 
@@ -172,7 +172,6 @@ def register_face():
 
 @app.route('/verify_attendance', methods=['POST'])
 def verify_attendance():
-    # Removed: global recent_tokens (We now use the database)
     data = request.json
     student_id = session.get('student_id') or data.get('prn')
     current_device = data.get('device_fingerprint')
@@ -186,8 +185,7 @@ def verify_attendance():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # --- NEW: DATABASE TOKEN VALIDATION ---
-    # Check if the token exists and is not expired
+    # --- DATABASE TOKEN VALIDATION ---
     cursor.execute("""
         SELECT SubjectName, ClassYear FROM ActiveQRSessions 
         WHERE TokenValue = ? AND ExpiresAt > GETDATE()
@@ -199,14 +197,11 @@ def verify_attendance():
         conn.close()
         return jsonify({"status": "fail", "message": "QR Expired or Invalid!"})
 
-    # Extract subject and target year from the database session
     subject = session_row[0]
     class_year = session_row[1]
-    
-    # Keep the token ID for the log (strip the subject part if necessary)
     scanned_token = full_token.split("|", 1)[0] if "|" in full_token else full_token
 
-    # 1. STUDENT VALIDATION (Including their Registered Year)
+    # 1. STUDENT VALIDATION
     cursor.execute("SELECT StudentName, DeviceID, ClassYear FROM Students WHERE StudentID = ?", (student_id,))
     user = cursor.fetchone()
     
@@ -224,8 +219,18 @@ def verify_attendance():
             "message": f"Access Denied! You are a {student_registered_year} student. This QR is for {class_year}."
         })
 
+    # --- UPDATED: DEVICE BINDING SECURITY ---
+    # If a teacher has reset the device, stored_device will be None in Python
+    if stored_device is None:
+        conn.close()
+        return jsonify({
+            "status": "fail", 
+            "message": "Device not linked! Please logout and login again to bind this phone."
+        })
+
     # 2. Security: Device Fingerprint Check
-    if stored_device and stored_device != current_device:
+    # We now check that the active device matches the database binding
+    if stored_device != current_device:
         conn.close()
         return jsonify({"status": "fail", "message": "Security Alert: Unauthorized Device!"})
 
@@ -267,7 +272,7 @@ def verify_attendance():
         return jsonify({"status": "error", "message": f"Face Engine Error: {str(e)}"})
 
     # Geofencing Logic
-    class_lat, class_lon = 19.197831564180618, 72.82618728310584
+    class_lat, class_lon = 19.18217458321158, 72.84003716649318
     distance = calculate_distance(lat, lon, class_lat, class_lon)
     status = "Present" if distance <= 100 else "Too Far"
     
@@ -287,9 +292,9 @@ def verify_attendance():
 
         # 4. SAVE TO DATABASE
         cursor.execute("""
-            INSERT INTO AttendanceLogs (StudentName, TokenUsed, Status, SubjectName, ClassYear, Latitude, Longitude) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (student_name, scanned_token, status, subject, class_year, lat, lon))
+            INSERT INTO AttendanceLogs (StudentName, TokenUsed, Status, SubjectName, ClassYear, Latitude, Longitude, EntryType) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (student_name, scanned_token, status, subject, class_year, lat, lon, 'QR_Scan'))
         
         conn.commit()
         conn.close()
@@ -356,13 +361,12 @@ def login():
             conn.close()
             return "Invalid Admin Credentials", 401
 
-    # 2. TEACHER LOGIN LOGIC (Updated for Dashboard)
+    # 2. TEACHER LOGIN LOGIC
     elif role_type == 'Teacher':
         cursor.execute("SELECT TeacherName, StaffID, Password FROM Teachers WHERE StaffID = ?", (user_id,))
         user = cursor.fetchone()
         
         if user and check_password_hash(user[2], password):
-            # Check if teacher has an assignment for the selected year
             cursor.execute("SELECT SubjectName FROM TeacherSubjects WHERE StaffID = ? AND ClassYear = ?", (user_id, class_year))
             subject_row = cursor.fetchone()
             
@@ -372,7 +376,6 @@ def login():
                 session['user_role'] = 'Teacher'
                 session['selected_class'] = class_year
                 conn.close()
-                # REDIRECT TO DASHBOARD instead of qr_display
                 return redirect(url_for('teacher_dashboard'))
             else:
                 conn.close()
@@ -383,14 +386,32 @@ def login():
 
     # 3. STUDENT LOGIN LOGIC
     else:
-        cursor.execute("SELECT StudentName, StudentID, Password FROM Students WHERE StudentID = ?", (user_id,))
+        cursor.execute("SELECT StudentName, StudentID, Password, DeviceID FROM Students WHERE StudentID = ?", (user_id,))
         user = cursor.fetchone()
 
         if user and check_password_hash(user[2], password):
-            session['student_id'] = user[1]
-            session['student_name'] = user[0]
+            student_name = user[0]
+            student_id = user[1]
+            stored_device = user[3]
+            
+            # Capture the current device fingerprint from the hidden form field
+            current_device_from_login = request.form.get('device_fingerprint')
+
+            # --- DEVICE RE-BINDING ONLY ---
+            # If the device was reset (NULL in DB), we only link the new ID here.
+            # We DO NOT mark attendance; the student must still scan the QR.
+            if stored_device is None and current_device_from_login:
+                cursor.execute("UPDATE Students SET DeviceID = ? WHERE StudentID = ?", 
+                               (current_device_from_login, student_id))
+                conn.commit()
+                print(f"DEBUG: Device Re-linked for {student_id}. Rescan required.")
+
+            session['student_id'] = student_id
+            session['student_name'] = student_name
             session['user_role'] = 'Student'
             conn.close()
+            
+            # Redirect to dashboard so they can use the "Take Attendance" button to rescan.
             return redirect(url_for('stats_page'))
         else:
             conn.close()
@@ -500,7 +521,7 @@ def get_attendance_api():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # 1. Get the subject name
+    # 1. Get the subject name assigned to the teacher for this specific class
     cursor.execute("SELECT SubjectName FROM TeacherSubjects WHERE StaffID = ? AND ClassYear = ?", 
                    (teacher_id, class_year))
     subj_row = cursor.fetchone()
@@ -511,19 +532,29 @@ def get_attendance_api():
     
     subject = subj_row[0]
 
-    # 2. Get EVERY student registered, sorted by Roll Number ASCENDING
-    # We use CAST to ensure numerical sorting (1, 2, 10 instead of 1, 10, 2)
+    # 2. Get EVERY student registered, including their StudentID (PRN) for device resetting
+    # PRN is essential to identify which phone binding to clear
     cursor.execute("""
-        SELECT StudentName, ClassYear, RollNo 
+        SELECT StudentName, ClassYear, RollNo, StudentID 
         FROM Students 
         WHERE ClassYear = ? 
         ORDER BY CAST(RollNo AS INT) ASC
     """, (class_year,))
-    all_students = [{"name": r[0], "class_year": r[1], "roll_no": r[2]} for r in cursor.fetchall()]
+    
+    # We include 'prn' in the dictionary so the frontend can pass it to /reset_device
+    all_students = [
+        {
+            "name": r[0], 
+            "class_year": r[1], 
+            "roll_no": r[2],
+            "prn": r[3] 
+        } for r in cursor.fetchall()
+    ]
 
-    # 3. Get all attendance logs for this subject
+    # 3. Get all attendance logs for this subject, including EntryType
+    # EntryType helps the teacher track if a record was QR-scanned or manually entered
     cursor.execute("""
-        SELECT StudentName, ScanTime, Status, Latitude, Longitude, ClassYear 
+        SELECT StudentName, ScanTime, Status, Latitude, Longitude, ClassYear, EntryType 
         FROM AttendanceLogs 
         WHERE SubjectName = ? AND ClassYear = ? 
         ORDER BY ScanTime DESC
@@ -536,7 +567,8 @@ def get_attendance_api():
         "status": r[2],
         "lat": r[3], 
         "lon": r[4],
-        "class_year": r[5]
+        "class_year": r[5],
+        "entry_type": r[6]
     } for r in cursor.fetchall()]
 
     conn.close()
@@ -781,7 +813,7 @@ def teacher_dashboard():
     teacher_name = session.get('student_name')
     class_year = session.get('selected_class')
 
-    conn = get_db_connection()
+    conn = get_db_connection() 
     cursor = conn.cursor()
     
     # 1. Subject for current session cards
@@ -790,7 +822,6 @@ def teacher_dashboard():
     subject = subj_row[0] if subj_row else 'General'
 
     # 2. Fetch full schedule with Day-Wise Sorting
-    # We use CASE to force the database to follow the Monday-Saturday sequence
     cursor.execute("""
         SELECT DayOfWeek, StartTime, SubjectName, ClassYear 
         FROM Timetable 
@@ -805,8 +836,18 @@ def teacher_dashboard():
             ELSE 7 END, 
         StartTime ASC
     """, (f"%{teacher_name}%",))
-    
     raw_schedule = cursor.fetchall()
+
+    # 3. NEW: Fetch Students for Manual Attendance Dropdown
+    # We filter by class_year so the teacher only sees students in the current class
+    cursor.execute("""
+        SELECT StudentID, Password, StudentName, DeviceID, RollNo 
+        FROM Students 
+        WHERE ClassYear = ? 
+        ORDER BY RollNo ASC
+    """, (class_year,))
+    students = cursor.fetchall()
+
     conn.close()
 
     # Labels for the frontend display
@@ -816,6 +857,7 @@ def teacher_dashboard():
     return render_template('teacher_dashboard.html', 
                            subject=subject, 
                            raw_schedule=raw_schedule,
+                           students=students,  # Added students list
                            days=days, 
                            time_slots=time_slots)
 
@@ -878,6 +920,110 @@ def contact_us():
         return jsonify({"status": "success", "message": "Message sent successfully!"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+    
+@app.route('/manual_mark', methods=['POST'])
+@login_required(role="Teacher")
+def manual_mark():
+    student_name = request.form.get('student_name')
+    teacher_id = session.get('student_id')
+    class_year = session.get('selected_class')
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # 1. Dynamically get the subject assigned to THIS teacher for THIS class
+    cursor.execute("SELECT SubjectName FROM TeacherSubjects WHERE StaffID = ? AND ClassYear = ?", 
+                   (teacher_id, class_year))
+    subj_row = cursor.fetchone()
+    subject_name = subj_row[0] if subj_row else 'General'
+
+    now = datetime.now()
+
+    try:
+        # 2. Insert into AttendanceLogs
+        # We ensure Status is 'Present' so the badge turns green in the report
+        query = """
+        INSERT INTO AttendanceLogs 
+        (StudentName, ScanTime, Latitude, Longitude, Status, SubjectName, ClassYear, EntryType)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        cursor.execute(query, (
+            student_name, 
+            now, 
+            0.0, 0.0, 
+            'Present', 
+            subject_name, 
+            class_year, 
+            'Manual_Entry'
+        ))
+        
+        conn.commit()
+        flash(f"Attendance for {student_name} marked successfully!", "success")
+    except Exception as e:
+        print(f"Manual Mark Error: {e}")
+        flash("Error saving to database.", "danger")
+    finally:
+        conn.close()
+
+    # 3. Redirect back to exactly where the teacher was
+    return redirect(request.referrer or url_for('report_page'))
+
+@app.route('/delete_attendance', methods=['POST'])
+@login_required(role="Teacher")
+def delete_attendance():
+    student_name = request.form.get('student_name')
+    teacher_id = session.get('student_id')
+    class_year = session.get('selected_class')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # 1. Get current subject
+    cursor.execute("SELECT SubjectName FROM TeacherSubjects WHERE StaffID = ? AND ClassYear = ?", 
+                   (teacher_id, class_year))
+    subj_row = cursor.fetchone()
+    subject_name = subj_row[0] if subj_row else 'General'
+
+    try:
+        # 2. Delete today's log for this student and subject
+        # We target today's date so historical data isn't affected
+        cursor.execute("""
+            DELETE FROM AttendanceLogs 
+            WHERE StudentName = ? 
+            AND SubjectName = ? 
+            AND CAST(ScanTime AS DATE) = CAST(GETDATE() AS DATE)
+        """, (student_name, subject_name))
+        
+        conn.commit()
+        flash(f"Attendance for {student_name} removed.", "info")
+    except Exception as e:
+        print(f"Delete Error: {e}")
+        flash("Error deleting record.", "danger")
+    finally:
+        conn.close()
+
+    return redirect(request.referrer or url_for('report_page'))
+
+@app.route('/reset_device', methods=['POST'])
+@login_required(role="Teacher")
+def reset_device():
+    student_prn = request.form.get('student_prn')
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Set DeviceID to NULL so the next login registers the new phone
+        cursor.execute("UPDATE Students SET DeviceID = NULL WHERE StudentID = ?", (student_prn,))
+        conn.commit()
+        flash(f"Device binding reset for PRN: {student_prn}. They can now link a new phone.", "info")
+    except Exception as e:
+        print(f"Reset Error: {e}")
+        flash("Error resetting device binding.", "danger")
+    finally:
+        conn.close()
+
+    return redirect(request.referrer or url_for('report_page'))
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
