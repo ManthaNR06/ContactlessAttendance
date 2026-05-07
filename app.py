@@ -13,8 +13,6 @@ from flask import Flask, render_template, request, jsonify, session, redirect, u
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
 
-# --- CONFIGURATION ---
-# IMPORTANT: Update this every time you restart ngrok!
 PUBLIC_URL = "https://uncomprehended-apollo-outfly.ngrok-free.dev" 
 
 # --- DLIB ENGINE SETUP ---
@@ -272,7 +270,7 @@ def verify_attendance():
         return jsonify({"status": "error", "message": f"Face Engine Error: {str(e)}"})
 
     # Geofencing Logic
-    class_lat, class_lon = 19.18217458321158, 72.84003716649318
+    class_lat, class_lon = 19.19804292900372, 72.8259071490113
     distance = calculate_distance(lat, lon, class_lat, class_lon)
     status = "Present" if distance <= 100 else "Too Far"
     
