@@ -270,7 +270,7 @@ def verify_attendance():
         return jsonify({"status": "error", "message": f"Face Engine Error: {str(e)}"})
 
     # Geofencing Logic
-    class_lat, class_lon = 19.19804292900372, 72.8259071490113
+    class_lat, class_lon = 19.197967758010456, 72.82608015243783
     distance = calculate_distance(lat, lon, class_lat, class_lon)
     status = "Present" if distance <= 100 else "Too Far"
     
