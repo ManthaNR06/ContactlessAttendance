@@ -6,17 +6,19 @@ import base64
 import io
 import uuid
 import math
-import pyodbc
 import qrcode
+import psycopg2
+from psycopg2 import IntegrityError
 from functools import wraps # Added for the decorator
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
+import face_recognition_models
 
-PUBLIC_URL = "https://uncomprehended-apollo-outfly.ngrok-free.dev" 
+PUBLIC_URL = os.environ.get("PUBLIC_URL", "").rstrip("/")
 
 # --- DLIB ENGINE SETUP ---
-model_dir = r'C:\Users\manth\AppData\Local\Programs\Python\Python312\Lib\site-packages\face_recognition_models\models'
+model_dir = os.path.join(os.path.dirname(face_recognition_models.__file__), "models")
 face_detector = dlib.get_frontal_face_detector()
 shape_predictor = dlib.shape_predictor(os.path.join(model_dir, "shape_predictor_68_face_landmarks.dat"))
 face_encoder = dlib.face_recognition_model_v1(os.path.join(model_dir, "dlib_face_recognition_resnet_model_v1.dat"))
@@ -38,7 +40,7 @@ def get_face_encoding_direct(image_path):
     return np.array(face_encoder.compute_face_descriptor(img_rgb, shape))
 
 app = Flask(__name__)
-app.secret_key = "supersecretkey123"
+app.secret_key = os.environ["SECRET_KEY"]
 
 recent_tokens = [] 
 
@@ -57,11 +59,9 @@ def login_required(role="any"):
     return wrapper
 
 def get_db_connection():
-    return pyodbc.connect(
-        r'DRIVER={SQL Server};'
-        r'SERVER=MANTHAN\SQLEXPRESS;' 
-        r'DATABASE=ContactlessAttendanceDB;'
-        r'Trusted_Connection=yes;'
+    return psycopg2.connect(
+        os.environ["DATABASE_URL"],
+        sslmode="require"
     )
 
 def calculate_distance(lat1, lon1, lat2, lon2):
@@ -88,6 +88,7 @@ def teacher_page():
 @login_required(role="Teacher")
 def qr_display(subject):
     return render_template('teacher_qr.html', subject=subject)
+
 @app.route('/generate_qr_api')
 def generate_qr_api():
     # We are removing 'global recent_tokens' because we use the DB now!
@@ -106,11 +107,11 @@ def generate_qr_api():
     # 3. Save to your new database table
     cursor.execute("""
         INSERT INTO ActiveQRSessions (TokenValue, SubjectName, ClassYear, ExpiresAt)
-        VALUES (?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s)
     """, (new_token, subject, class_year, expires_at))
     
     # 4. Optional: Auto-cleanup old tokens while we are here
-    cursor.execute("DELETE FROM ActiveQRSessions WHERE ExpiresAt < GETDATE()")
+    cursor.execute("DELETE FROM ActiveQRSessions WHERE ExpiresAt < CURRENT_TIMESTAMP")
     
     conn.commit()
     conn.close()
@@ -158,12 +159,12 @@ def register_face():
         # Added 'Student' as the default role for new registrations
         cursor.execute("""
     INSERT INTO Students (StudentID, Password, StudentName, DeviceID, RollNo, PRN, Role, ClassYear) 
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", 
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""", 
 (prn, hashed_password, fullname, fingerprint, rollno, prn, 'Student', class_year))
         conn.commit()
         conn.close()
         return jsonify({"status": "success", "message": "Account created!"})
-    except pyodbc.IntegrityError:
+    except IntegrityError:
         return jsonify({"status": "error", "message": "Roll Number or PRN already registered!"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
@@ -186,7 +187,7 @@ def verify_attendance():
     # --- DATABASE TOKEN VALIDATION ---
     cursor.execute("""
         SELECT SubjectName, ClassYear FROM ActiveQRSessions 
-        WHERE TokenValue = ? AND ExpiresAt > GETDATE()
+        WHERE TokenValue = %s AND ExpiresAt > CURRENT_TIMESTAMP
     """, (full_token,))
     
     session_row = cursor.fetchone()
@@ -200,7 +201,7 @@ def verify_attendance():
     scanned_token = full_token.split("|", 1)[0] if "|" in full_token else full_token
 
     # 1. STUDENT VALIDATION
-    cursor.execute("SELECT StudentName, DeviceID, ClassYear FROM Students WHERE StudentID = ?", (student_id,))
+    cursor.execute("SELECT StudentName, DeviceID, ClassYear FROM Students WHERE StudentID = %s", (student_id,))
     user = cursor.fetchone()
     
     if not user:
@@ -270,18 +271,18 @@ def verify_attendance():
         return jsonify({"status": "error", "message": f"Face Engine Error: {str(e)}"})
 
     # Geofencing Logic
-    class_lat, class_lon = 19.197967758010456, 72.82608015243783
+    class_lat, class_lon = 19.21949814821652, 72.83088830481915
     distance = calculate_distance(lat, lon, class_lat, class_lon)
-    status = "Present" if distance <= 100 else "Too Far"
+    status = "Present" if distance <=1000 else "Too Far"
     
     try:
         # 3. DUPLICATE CHECK
         cursor.execute("""
             SELECT 1 FROM AttendanceLogs 
-            WHERE StudentName = ? 
-            AND SubjectName = ? 
+            WHERE StudentName = %s 
+            AND SubjectName = %s 
             AND Status = 'Present'
-            AND CAST(ScanTime AS DATE) = CAST(GETDATE() AS DATE)
+            AND CAST(ScanTime AS DATE) = CAST(CURRENT_TIMESTAMP AS DATE)
         """, (student_name, subject))
         
         if cursor.fetchone():
@@ -291,7 +292,7 @@ def verify_attendance():
         # 4. SAVE TO DATABASE
         cursor.execute("""
             INSERT INTO AttendanceLogs (StudentName, TokenUsed, Status, SubjectName, ClassYear, Latitude, Longitude, EntryType) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (student_name, scanned_token, status, subject, class_year, lat, lon, 'QR_Scan'))
         
         conn.commit()
@@ -325,7 +326,7 @@ def update_role():
         cursor = conn.cursor()
         
         # Update the Role column for the specific StudentID
-        cursor.execute("UPDATE Students SET Role = ? WHERE StudentID = ?", (new_role, prn))
+        cursor.execute("UPDATE Students SET Role = %s WHERE StudentID = %s", (new_role, prn))
         
         conn.commit()
         conn.close()
@@ -346,7 +347,7 @@ def login():
 
     # 1. ADMIN LOGIN LOGIC
     if role_type == 'Admin':
-        cursor.execute("SELECT AdminName, Username, Password FROM Admins WHERE Username = ?", (user_id,))
+        cursor.execute("SELECT AdminName, Username, Password FROM Admins WHERE Username = %s", (user_id,))
         user = cursor.fetchone()
         
         if user and check_password_hash(user[2], password):
@@ -361,11 +362,11 @@ def login():
 
     # 2. TEACHER LOGIN LOGIC
     elif role_type == 'Teacher':
-        cursor.execute("SELECT TeacherName, StaffID, Password FROM Teachers WHERE StaffID = ?", (user_id,))
+        cursor.execute("SELECT TeacherName, StaffID, Password FROM Teachers WHERE StaffID = %s", (user_id,))
         user = cursor.fetchone()
         
         if user and check_password_hash(user[2], password):
-            cursor.execute("SELECT SubjectName FROM TeacherSubjects WHERE StaffID = ? AND ClassYear = ?", (user_id, class_year))
+            cursor.execute("SELECT SubjectName FROM TeacherSubjects WHERE StaffID = %s AND ClassYear = %s", (user_id, class_year))
             subject_row = cursor.fetchone()
             
             if subject_row:
@@ -384,7 +385,7 @@ def login():
 
     # 3. STUDENT LOGIN LOGIC
     else:
-        cursor.execute("SELECT StudentName, StudentID, Password, DeviceID FROM Students WHERE StudentID = ?", (user_id,))
+        cursor.execute("SELECT StudentName, StudentID, Password, DeviceID FROM Students WHERE StudentID = %s", (user_id,))
         user = cursor.fetchone()
 
         if user and check_password_hash(user[2], password):
@@ -399,7 +400,7 @@ def login():
             # If the device was reset (NULL in DB), we only link the new ID here.
             # We DO NOT mark attendance; the student must still scan the QR.
             if stored_device is None and current_device_from_login:
-                cursor.execute("UPDATE Students SET DeviceID = ? WHERE StudentID = ?", 
+                cursor.execute("UPDATE Students SET DeviceID = %s WHERE StudentID = %s", 
                                (current_device_from_login, student_id))
                 conn.commit()
                 print(f"DEBUG: Device Re-linked for {student_id}. Rescan required.")
@@ -445,7 +446,7 @@ def stats_page():
     cursor.execute("""
         SELECT SubjectName, ScanTime, Status, Latitude, Longitude, ClassYear 
         FROM AttendanceLogs 
-        WHERE StudentName = ? 
+        WHERE StudentName = %s 
         ORDER BY ScanTime DESC 
     """, (name,))
     
@@ -467,7 +468,7 @@ def stats_page():
         SELECT SubjectName, COUNT(*) as Total, 
                SUM(CASE WHEN Status = 'Present' THEN 1 ELSE 0 END) as Present
         FROM AttendanceLogs 
-        WHERE StudentName = ? 
+        WHERE StudentName = %s 
         GROUP BY SubjectName
     """, (name,))
     
@@ -493,14 +494,14 @@ def report_page():
     cursor = conn.cursor()
 
     # 1. Identify the subject assigned to this teacher for the selected year
-    cursor.execute("SELECT SubjectName FROM TeacherSubjects WHERE StaffID = ? AND ClassYear = ?", 
+    cursor.execute("SELECT SubjectName FROM TeacherSubjects WHERE StaffID = %s AND ClassYear = %s", 
                    (teacher_id, class_year))
     subj_row = cursor.fetchone()
     assigned_subject = subj_row[0] if subj_row else 'N/A'
 
     # 2. Get the REAL total number of students enrolled in this year
     # This prevents the denominator from being based on log entries
-    cursor.execute("SELECT COUNT(*) FROM Students WHERE ClassYear = ?", (class_year,))
+    cursor.execute("SELECT COUNT(*) FROM Students WHERE ClassYear = %s", (class_year,))
     total_enrolled = cursor.fetchone()[0] or 0
 
     conn.close()
@@ -520,7 +521,7 @@ def get_attendance_api():
     cursor = conn.cursor()
 
     # 1. Get the subject name assigned to the teacher for this specific class
-    cursor.execute("SELECT SubjectName FROM TeacherSubjects WHERE StaffID = ? AND ClassYear = ?", 
+    cursor.execute("SELECT SubjectName FROM TeacherSubjects WHERE StaffID = %s AND ClassYear = %s", 
                    (teacher_id, class_year))
     subj_row = cursor.fetchone()
     
@@ -535,7 +536,7 @@ def get_attendance_api():
     cursor.execute("""
         SELECT StudentName, ClassYear, RollNo, StudentID 
         FROM Students 
-        WHERE ClassYear = ? 
+        WHERE ClassYear = %s 
         ORDER BY CAST(RollNo AS INT) ASC
     """, (class_year,))
     
@@ -554,7 +555,7 @@ def get_attendance_api():
     cursor.execute("""
         SELECT StudentName, ScanTime, Status, Latitude, Longitude, ClassYear, EntryType 
         FROM AttendanceLogs 
-        WHERE SubjectName = ? AND ClassYear = ? 
+        WHERE SubjectName = %s AND ClassYear = %s 
         ORDER BY ScanTime DESC
     """, (subject, class_year))
     
@@ -579,20 +580,37 @@ def assign_subject():
     staff_id = data.get('staff_id')
     year = data.get('year')
     subject = data.get('subject')
-    
+
     conn = get_db_connection()
     cursor = conn.cursor()
-    # This UPDATES existing or INSERTS new assignments
-    cursor.execute("""
-        IF EXISTS (SELECT 1 FROM TeacherSubjects WHERE StaffID=? AND ClassYear=?)
-            UPDATE TeacherSubjects SET SubjectName=? WHERE StaffID=? AND ClassYear=?
-        ELSE
-            INSERT INTO TeacherSubjects (StaffID, ClassYear, SubjectName) VALUES (?, ?, ?)
-    """, (staff_id, year, subject, staff_id, year, staff_id, year, subject))
-    conn.commit()
-    conn.close()
-    return jsonify({"status": "success"})
 
+    try:
+        cursor.execute(
+            "SELECT 1 FROM TeacherSubjects WHERE StaffID = %s AND ClassYear = %s",
+            (staff_id, year)
+        )
+
+        if cursor.fetchone():
+            cursor.execute(
+                "UPDATE TeacherSubjects SET SubjectName = %s WHERE StaffID = %s AND ClassYear = %s",
+                (subject, staff_id, year)
+            )
+        else:
+            cursor.execute(
+                "INSERT INTO TeacherSubjects (StaffID, ClassYear, SubjectName) VALUES (%s, %s, %s)",
+                (staff_id, year, subject)
+            )
+
+        conn.commit()
+        return jsonify({"status": "success"})
+
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+    finally:
+        conn.close()
+        
 @app.route('/get_assigned_subject')
 def get_assigned_subject():
     staff_id = request.args.get('staff_id')
@@ -604,7 +622,7 @@ def get_assigned_subject():
     conn = get_db_connection()
     cursor = conn.cursor()
     # Check the mapping table for the subject
-    cursor.execute("SELECT SubjectName FROM TeacherSubjects WHERE StaffID = ? AND ClassYear = ?", (staff_id, year))
+    cursor.execute("SELECT SubjectName FROM TeacherSubjects WHERE StaffID = %s AND ClassYear = %s", (staff_id, year))
     row = cursor.fetchone()
     conn.close()
     
@@ -627,20 +645,20 @@ def add_teacher_full():
     cursor = conn.cursor()
     try:
         # 1. Create the main Teacher account if it doesn't exist
-        cursor.execute("SELECT 1 FROM Teachers WHERE StaffID = ?", (staff_id,))
+        cursor.execute("SELECT 1 FROM Teachers WHERE StaffID = %s", (staff_id,))
         if not cursor.fetchone():
-            cursor.execute("INSERT INTO Teachers (TeacherName, StaffID, Password) VALUES (?, ?, ?)", 
+            cursor.execute("INSERT INTO Teachers (TeacherName, StaffID, Password) VALUES (%s, %s, %s)", 
                            (name, staff_id, hashed_pw))
         
         # 2. CLEAR existing mappings to avoid duplicates
-        cursor.execute("DELETE FROM TeacherSubjects WHERE StaffID = ?", (staff_id,))
+        cursor.execute("DELETE FROM TeacherSubjects WHERE StaffID = %s", (staff_id,))
 
         # 3. REGISTER all subjects from the frontend into the mapping table
         for item in mappings:
             # item['year'] and item['subject'] come from the .t-year and .t-subj inputs
             cursor.execute("""
                 INSERT INTO TeacherSubjects (StaffID, ClassYear, SubjectName) 
-                VALUES (?, ?, ?)
+                VALUES (%s, %s, %s)
             """, (staff_id, item['year'], item['subject']))
         
         conn.commit()
@@ -675,8 +693,8 @@ def delete_teacher(staff_id):
         conn = get_db_connection()
         cursor = conn.cursor()
         # Delete mappings first to avoid foreign key errors, then delete the teacher
-        cursor.execute("DELETE FROM TeacherSubjects WHERE StaffID = ?", (staff_id,))
-        cursor.execute("DELETE FROM Teachers WHERE StaffID = ?", (staff_id,))
+        cursor.execute("DELETE FROM TeacherSubjects WHERE StaffID = %s", (staff_id,))
+        cursor.execute("DELETE FROM Teachers WHERE StaffID = %s", (staff_id,))
         conn.commit()
         conn.close()
         return jsonify({"status": "success", "message": "Teacher deleted successfully!"})
@@ -693,9 +711,9 @@ def get_student_count(subject):
     # It ignores the ClassYear to ensure the counter stays active even if session flips
     cursor.execute("""
         SELECT COUNT(*) FROM AttendanceLogs 
-        WHERE SubjectName = ? 
+        WHERE SubjectName = %s 
         AND Status = 'Present'
-        AND CAST(ScanTime AS DATE) = CAST(GETDATE() AS DATE)
+        AND CAST(ScanTime AS DATE) = CAST(CURRENT_TIMESTAMP AS DATE)
     """, (subject,))
     
     count = cursor.fetchone()[0]
@@ -710,11 +728,11 @@ def save_timetable():
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # 1. CONFLICT CHECK: Is this lecturer already teaching elsewhere at this time?
+        # 1. CONFLICT CHECK: Is this lecturer already teaching elsewhere at this time%s
         # We look for any record with the same Day, same Time, and same Lecturer, but a DIFFERENT Class Year
         cursor.execute("""
             SELECT ClassYear FROM Timetable 
-            WHERE DayOfWeek = ? AND StartTime = ? AND LecturerName = ? AND ClassYear != ?
+            WHERE DayOfWeek = %s AND StartTime = %s AND LecturerName = %s AND ClassYear != %s
         """, (data['day'], data['time'], data['lecturer'], data['year']))
         
         conflict = cursor.fetchone()
@@ -728,22 +746,22 @@ def save_timetable():
         # 2. UPSERT LOGIC: Check if this specific Year/Day/Time slot already exists
         cursor.execute("""
             SELECT 1 FROM Timetable 
-            WHERE ClassYear = ? AND DayOfWeek = ? AND StartTime = ?
+            WHERE ClassYear = %s AND DayOfWeek = %s AND StartTime = %s
         """, (data['year'], data['day'], data['time']))
         
         if cursor.fetchone():
             # Update existing slot
             cursor.execute("""
                 UPDATE Timetable 
-                SET SubjectName = ?, LecturerName = ?
-                WHERE ClassYear = ? AND DayOfWeek = ? AND StartTime = ?
+                SET SubjectName = %s, LecturerName = %s
+                WHERE ClassYear = %s AND DayOfWeek = %s AND StartTime = %s
             """, (data['subject'], data['lecturer'], data['year'], data['day'], data['time']))
             message = "Schedule Updated!"
         else:
             # Insert new slot
             cursor.execute("""
                 INSERT INTO Timetable (ClassYear, DayOfWeek, StartTime, SubjectName, LecturerName)
-                VALUES (?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s)
             """, (data['year'], data['day'], data['time'], data['subject'], data['lecturer']))
             message = "New Lecture Added!"
             
@@ -774,7 +792,7 @@ def delete_lecture(lecture_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM Timetable WHERE ScheduleID = ?", (lecture_id,))
+        cursor.execute("DELETE FROM Timetable WHERE ScheduleID = %s", (lecture_id,))
         conn.commit()
         conn.close()
         return jsonify({"status": "success", "message": "Lecture removed!"})
@@ -791,8 +809,8 @@ def update_timetable():
         # Updates existing record using the unique combination of Year, Day, and Time
         cursor.execute("""
             UPDATE Timetable 
-            SET SubjectName = ?, LecturerName = ?
-            WHERE ClassYear = ? AND DayOfWeek = ? AND StartTime = ?
+            SET SubjectName = %s, LecturerName = %s
+            WHERE ClassYear = %s AND DayOfWeek = %s AND StartTime = %s
         """, (data['subject'], data['lecturer'], data['year'], data['day'], data['time']))
         
         if cursor.rowcount == 0:
@@ -815,7 +833,7 @@ def teacher_dashboard():
     cursor = conn.cursor()
     
     # 1. Subject for current session cards
-    cursor.execute("SELECT SubjectName FROM TeacherSubjects WHERE StaffID = ? AND ClassYear = ?", (teacher_id, class_year))
+    cursor.execute("SELECT SubjectName FROM TeacherSubjects WHERE StaffID = %s AND ClassYear = %s", (teacher_id, class_year))
     subj_row = cursor.fetchone()
     subject = subj_row[0] if subj_row else 'General'
 
@@ -823,7 +841,7 @@ def teacher_dashboard():
     cursor.execute("""
         SELECT DayOfWeek, StartTime, SubjectName, ClassYear 
         FROM Timetable 
-        WHERE LecturerName LIKE ?
+        WHERE LecturerName LIKE %s
         ORDER BY CASE 
             WHEN DayOfWeek = 'Monday' THEN 1
             WHEN DayOfWeek = 'Tuesday' THEN 2
@@ -841,7 +859,7 @@ def teacher_dashboard():
     cursor.execute("""
         SELECT StudentID, Password, StudentName, DeviceID, RollNo 
         FROM Students 
-        WHERE ClassYear = ? 
+        WHERE ClassYear = %s 
         ORDER BY RollNo ASC
     """, (class_year,))
     students = cursor.fetchall()
@@ -867,7 +885,7 @@ def clear_timetable(year):
         cursor = conn.cursor()
         
         # Deletes all lectures matching the specific year (e.g., '1st Year')
-        cursor.execute("DELETE FROM Timetable WHERE ClassYear = ?", (year,))
+        cursor.execute("DELETE FROM Timetable WHERE ClassYear = %s", (year,))
         
         conn.commit()
         conn.close()
@@ -883,7 +901,7 @@ def get_teacher_subjects(staff_name, class_year):
     cursor = conn.cursor()
     
     # 1. Get the StaffID for the selected teacher name
-    cursor.execute("SELECT StaffID FROM Teachers WHERE TeacherName = ?", (staff_name,))
+    cursor.execute("SELECT StaffID FROM Teachers WHERE TeacherName = %s", (staff_name,))
     teacher = cursor.fetchone()
     
     if not teacher:
@@ -894,7 +912,7 @@ def get_teacher_subjects(staff_name, class_year):
     cursor.execute("""
         SELECT DISTINCT SubjectName 
         FROM TeacherSubjects 
-        WHERE StaffID = ? AND ClassYear = ?
+        WHERE StaffID = %s AND ClassYear = %s
     """, (teacher[0], class_year))
     
     subjects = [row[0] for row in cursor.fetchall()]
@@ -930,7 +948,7 @@ def manual_mark():
     cursor = conn.cursor()
     
     # 1. Dynamically get the subject assigned to THIS teacher for THIS class
-    cursor.execute("SELECT SubjectName FROM TeacherSubjects WHERE StaffID = ? AND ClassYear = ?", 
+    cursor.execute("SELECT SubjectName FROM TeacherSubjects WHERE StaffID = %s AND ClassYear = %s", 
                    (teacher_id, class_year))
     subj_row = cursor.fetchone()
     subject_name = subj_row[0] if subj_row else 'General'
@@ -943,7 +961,7 @@ def manual_mark():
         query = """
         INSERT INTO AttendanceLogs 
         (StudentName, ScanTime, Latitude, Longitude, Status, SubjectName, ClassYear, EntryType)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """
         cursor.execute(query, (
             student_name, 
@@ -977,7 +995,7 @@ def delete_attendance():
     cursor = conn.cursor()
     
     # 1. Get current subject
-    cursor.execute("SELECT SubjectName FROM TeacherSubjects WHERE StaffID = ? AND ClassYear = ?", 
+    cursor.execute("SELECT SubjectName FROM TeacherSubjects WHERE StaffID = %s AND ClassYear = %s", 
                    (teacher_id, class_year))
     subj_row = cursor.fetchone()
     subject_name = subj_row[0] if subj_row else 'General'
@@ -987,9 +1005,9 @@ def delete_attendance():
         # We target today's date so historical data isn't affected
         cursor.execute("""
             DELETE FROM AttendanceLogs 
-            WHERE StudentName = ? 
-            AND SubjectName = ? 
-            AND CAST(ScanTime AS DATE) = CAST(GETDATE() AS DATE)
+            WHERE StudentName = %s 
+            AND SubjectName = %s 
+            AND CAST(ScanTime AS DATE) = CAST(CURRENT_TIMESTAMP AS DATE)
         """, (student_name, subject_name))
         
         conn.commit()
@@ -1012,7 +1030,7 @@ def reset_device():
     
     try:
         # Set DeviceID to NULL so the next login registers the new phone
-        cursor.execute("UPDATE Students SET DeviceID = NULL WHERE StudentID = ?", (student_prn,))
+        cursor.execute("UPDATE Students SET DeviceID = NULL WHERE StudentID = %s", (student_prn,))
         conn.commit()
         flash(f"Device binding reset for PRN: {student_prn}. They can now link a new phone.", "info")
     except Exception as e:
