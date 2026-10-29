@@ -456,7 +456,7 @@ def stats_page():
     logs = [
         {
             "subject": r[0],
-            "time": r[1].strftime("%d-%m-%Y %I:%M %p"),
+            "time": r[1].strftime("%d-%m-%Y %I:%M %p") if r[1] is not None else "N/A",
             "status": r[2],
             "lat": r[3],
             "lon": r[4]
